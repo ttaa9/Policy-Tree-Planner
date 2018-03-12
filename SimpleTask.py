@@ -15,10 +15,11 @@ class SimpleGridTask:
         raise NotImplementedError( "Unknown action type" )
 
     # Interface
-    def performAction( self ): raise NotImplementedError( "Required Method" )
+    def performAction( self, action ): raise NotImplementedError( "Required Method" )
     def getReward( self ): raise NotImplementedError( "Required Method" )
     def getStateRep( self ): raise NotImplementedError( "Required Method" )
     def display( self ): raise NotImplementedError( "Required Method" )
+    def _convertHistoryStateToOneHot( self ): raise NotImplementedError( "Required Method" )
 
     # Constructor
     def __init__(self,width,height,track_history):
@@ -28,15 +29,35 @@ class SimpleGridTask:
         self.track_history = track_history
         self.history = [ ]
 
-    # Returns the trajectory as a list of tuples (s_{i},a_{i},s_{i+1}) where a is one-hot
+    # Returns the trajectory as a list of tuples (s_{i},a_{i},s_{i+1}) where a & s_j are one-hot
     def getHistoryAsTupleArray(self):
         if self.track_history:
             n,k,tupHist = (len(self.history) - 1) // 2, 0, []
             for i in range(0,n):
                 a = self._intToOneHot(self.history[k+1])
-                tupHist.append( (self.history[k],a,self.history[k+2]) ) # S_i,a_i,S_{i+1}
+                s1_1hot = self._convertHistoryStateToOneHot( self.history[k] ) # Ensure a state is one-hot format
+                s2_1hot = self._convertHistoryStateToOneHot( self.history[k+2] )
+                tupHist.append( (s1_1hot, a, s2_1hot) ) # S_i,a_i,S_{i+1}
                 k += 2
             return tupHist
         else:
+            print('No history present')
             return None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
