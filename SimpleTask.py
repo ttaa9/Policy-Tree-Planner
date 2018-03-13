@@ -1,9 +1,9 @@
-import numpy as np
+import numpy as np, numpy.random as npr, random as r
 
 class SimpleGridTask:
 
 	# Helpers
-    def _intToOneHot(self,i,size): a = np.zeros(self.numActions); a[i] = 1; return a
+    def _intToOneHot(self,i,size): a = np.zeros(size); a[i] = 1; return a
     def _oneHotToInt(self,h): return np.argmax(h)
     def _strToInt(self,s): return self.actionDict[s]
 
@@ -19,15 +19,19 @@ class SimpleGridTask:
     def getReward( self ): raise NotImplementedError( "Required Method" )
     def getStateRep( self ): raise NotImplementedError( "Required Method" )
     def display( self ): raise NotImplementedError( "Required Method" )
-    def _convertHistoryStateToOneHot( self ): raise NotImplementedError( "Required Method" )
+
+    # Assuming we are concatentating one-hot here, don't do anything by default
+    def _convertHistoryStateToOneHot(self,history_state): return history_state
 
     # Constructor
-    def __init__(self,track_history):
+    def __init__(self,track_history,hidden=[]):
         # If tracking history, save the states and actions as [s_0,a_0,s_1,a_1,s_2,...]
         self.track_history = track_history
         self.history = [ ]
         # Add initial state to history if desired
-        if self.track_history: self.history.append(self.getStateRep())
+        if self.track_history: 
+            self.history.append(self.getStateRep())
+            self.hiddenHistory = hidden
 
     # Returns the trajectory as a list of tuples (s_{i},a_{i},s_{i+1}) where a & s_j are one-hot
     def getHistoryAsTupleArray(self):
@@ -44,7 +48,12 @@ class SimpleGridTask:
             print('No history present')
             return None
 
-
+    def _stochasticAction(self,inAction):
+        if self.isNoisy: 
+            action = npr.randint(0,self.numActions) if r.random() < self.stochasticity else inAction
+        else: 
+            action = inAction
+        return action
 
 
 

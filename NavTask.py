@@ -53,10 +53,7 @@ class NavigationTask(SimpleGridTask):
     # Action should be an int
     def performAction(self,actionIn):
         # Add noise in stochastic case
-        if self.isNoisy: 
-            action = npr.randint(0,self.numActions) if r.random() < self.stochasticity else actionIn
-        else: 
-            action = actionIn             
+        action = self._stochasticAction(actionIn)         
         # Note: Do nothing if action == 0 
         # Change facing
         if action >= 1 and action <= 4:
@@ -110,6 +107,7 @@ class NavigationTask(SimpleGridTask):
         a[i,j,k] = 1
         return a.flatten()
 
+    # 
     def _convertOneHotToHistoryState(self,one_hot_state_array):
         i,j,k = list(zip(*np.where(one_hot_state_array == 1)))[0]
         orien = self._intToOneHot(k,len(self.oriens)) # one-hot orientation
