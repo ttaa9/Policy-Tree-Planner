@@ -9,6 +9,10 @@ class NavigationTask(SimpleGridTask):
     Note that position is used as a tuple of integers until the one-hot version is needed.
     '''
 
+    #TODO should consider concatenating one-hot versions of the pos_x, pos_y, orien instead.
+    #TODO can then use sum of cross-entropies instead as loss. May make more sense.
+    #TODO see transport task.
+
     ### Static class variables ###
      # Set of possible actions
     numActions = 10
@@ -28,9 +32,9 @@ class NavigationTask(SimpleGridTask):
     oriens = ['N', 'E', 'S', 'W'] # 0,1,2,3
 
     # Constructor
-    def __init__(self,width=15,height=15,agent_start_pos=[np.array([0,0]),'N'],goal_pos=None,track_history=True):
-        # Call superclass constructor
-        super(NavigationTask,self).__init__(width,height,track_history)
+    def __init__(self,width=15,height=15,agent_start_pos=[np.array([0,0]),'N'],goal_pos=None,track_history=True,stochasticity=0.0):
+        # Grid size
+        self.w, self.h = width, height
         # Convenience Dictionaries
         self.actionDict = { NavigationTask.actions[i] : i for i in range(0,NavigationTask.numActions) }
         self.oriensDict = { NavigationTask.oriens[i] : i for i in range(0,len(NavigationTask.oriens)) }
@@ -40,17 +44,25 @@ class NavigationTask(SimpleGridTask):
         self.agent_pos = np.array([0,0]) if agent_start_pos is None else agent_start_pos[0]
         self.agent_orientation = 0 if agent_start_pos is None else self.oriensDict[agent_start_pos[1]]
         # Add initial state to history if desired
-        if self.track_history: self.history.append(self.getStateRep())
+        #if self.track_history: self.history.append(self.getStateRep())
+        # Add stochasticity to the environment transitions (stoch value is prob of uniformly random action instead)
+        self.stochasticity, self.isNoisy = stochasticity, stochasticity > 0.0 
+        # Call superclass constructor
+        super(NavigationTask,self).__init__(track_history)
 
     # Action should be an int
-    def performAction(self,action):
-        # Do nothing
-        if action == 0: return 
+    def performAction(self,actionIn):
+        # Add noise in stochastic case
+        if self.isNoisy: 
+            action = npr.randint(0,self.numActions) if r.random() < self.stochasticity else actionIn
+        else: 
+            action = actionIn             
+        # Note: Do nothing if action == 0 
         # Change facing
         if action >= 1 and action <= 4:
             self.agent_orientation = action - 1
         # Move character
-        else:
+        elif action > 4:
             numSteps = action - 4
             # Increment position
             if self.agent_orientation == 0:   self.agent_pos[1] += numSteps
@@ -64,7 +76,7 @@ class NavigationTask(SimpleGridTask):
             if self.agent_pos[1] >= self.h: self.agent_pos[1] = self.h - 1
         # Track history if needed
         if self.track_history:
-            self.history.append(action)
+            self.history.append(actionIn) # Record input action, not actual one that occurred
             self.history.append(self.getStateRep())
 
     def getReward(self):
@@ -100,20 +112,21 @@ class NavigationTask(SimpleGridTask):
 
     def _convertOneHotToHistoryState(self,one_hot_state_array):
         i,j,k = list(zip(*np.where(one_hot_state_array == 1)))[0]
-        orien = self._intToOneHot(k) # one-hot orientation
+        orien = self._intToOneHot(k,len(self.oriens)) # one-hot orientation
         a = np.zeros(6)
         a[0],a[1],a[2:] = i,j,orien
         return a
 
     # Static method: generates random data for forward model training
-    def generateRandomTrajectories(num_trajectories,max_num_steps,width=15,height=15,verbose=False):
+    def generateRandomTrajectories(num_trajectories,max_num_steps,width=15,height=15,verbose=False,noise_level=0):
         trajs = []
         for traj in range(0,num_trajectories):
             if verbose: print("Starting traj",traj)
             # Generate env with random placement 
             p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
             start_pos = [p_0, r.choice(NavigationTask.oriens)]
-            cenv = NavigationTask(width=width,height=height,agent_start_pos=start_pos,goal_pos=None,track_history=True)
+            cenv = NavigationTask(width=width,height=height,agent_start_pos=start_pos,goal_pos=None,
+                track_history=True,stochasticity=noise_level)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
             if verbose: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run)
@@ -135,7 +148,7 @@ class NavigationTask(SimpleGridTask):
 ### Testing ###
 
 def navmain():
-    env = NavigationTask()
+    env = NavigationTask(stochasticity=0.2)
     for i in range(0,1000):
         j = np.random.randint( env.numActions )
         print('--')
@@ -150,3 +163,6 @@ def navmain():
 
 if __name__ == '__main__':
     navmain()
+
+
+
