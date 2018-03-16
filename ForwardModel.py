@@ -1,26 +1,25 @@
 from SimpleTask import SimpleGridTask
 import numpy as np, numpy.random as npr, random as r, SimpleTask
 from TransportTask import TransportTask
-
-
-
+import tensorflow as tf
 
 # See: https://github.com/aymericdamien/TensorFlow-Examples/
 class SeqData():
     def __init__(self,dataFile):
         import dill
         with open(dataFile,'rb') as inFile:
-            print('Reading')
+            print('Reading',dataFile)
             env,data = dill.load(inFile)
-            print('read')
-
         inputs,labels,lengths = SimpleGridTask.convertDataSetIntoSeqToLabelSet(data, maxSeqLen=10)
+        self.lenOfAction = env.numActions
+        self.lenOfInput = len(inputs[0][0]) # len of state-action concatenation
+        self.lenOfState = self.lenOfInput - self.lenOfAction
         self.data,self.labels,self.seqlen = inputs,labels,lengths
         self.batch_id = 0
+        print('\tBuilt')
 
     def next(self, batch_size):
-        """ Return a batch of data. When dataset end is reached, start over.
-        """
+        """ Return a batch of data. When dataset end is reached, start over."""
         if self.batch_id == len(self.data):
             self.batch_id = 0
         batch_data = (self.data[self.batch_id:min(self.batch_id +
@@ -34,13 +33,13 @@ class SeqData():
 
 
 def main():
-    trainf,validf = "transport-data-try.dill", "transport-data-try2.dill"
-    train,valid = SeqData(trainf), SeqData(validf)
+    trainf, validf = "transport-data-train-small.dill", "transport-data-test-small.dill"
+    train, valid   = SeqData(trainf), SeqData(validf)
 
     # ==========
     #   MODEL
     # ==========
-
+    print('Defining Model')
     # Parameters
     learning_rate = 0.01
     training_steps = 10000
@@ -48,15 +47,17 @@ def main():
     display_step = 200
 
     # Network Parameters
-    seq_max_len = 20 # Sequence max length
-    n_hidden = 32 # hidden layer num of features
-    n_classes = 2 # linear sequence or not
+    seq_max_len = 10 # Sequence max length
+    n_hidden = train.lenOfInput # hidden layer num of features
+    n_classes = train.lenOfState # linear sequence or not
+
+    print('')
 
     trainset = train #ToySequenceData(n_samples=1000, max_seq_len=seq_max_len)
     testset = valid #ToySequenceData(n_samples=500, max_seq_len=seq_max_len)
 
     # tf Graph input
-    x = tf.placeholder("float", [None, seq_max_len, 1])
+    x = tf.placeholder("float", [None, seq_max_len, train.lenOfInput])
     y = tf.placeholder("float", [None, n_classes])
     # A placeholder for indicating each sequence length
     seqlen = tf.placeholder(tf.int32, [None])
@@ -75,7 +76,7 @@ def main():
         # Prepare data shape to match `rnn` function requirements
         # Current data input shape: (batch_size, n_steps, n_input)
         # Required shape: 'n_steps' tensors list of shape (batch_size, n_input)
-        
+
         # Unstack to get a list of 'n_steps' tensors of shape (batch_size, n_input)
         x = tf.unstack(x, seq_max_len, 1)
 
@@ -130,6 +131,7 @@ def main():
 
         for step in range(1, training_steps + 1):
             batch_x, batch_y, batch_seqlen = trainset.next(batch_size)
+
             # Run optimization op (backprop)
             sess.run(optimizer, feed_dict={x: batch_x, y: batch_y,
                                            seqlen: batch_seqlen})
@@ -154,22 +156,3 @@ def main():
 ################################################################################################################
 if __name__ == '__main__':
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -34,7 +34,7 @@ class TransportTask(SimpleGridTask):
         if goalState is None:
             ## Generate random goal state. This is not trivial since the agent can only pick up; it cannot put them down.
             ## Thus, we assume some objects stay where they are, and the rest must all be in the same place (with the agent).
-            # Sample a random number of the random objects 
+            # Sample a random number of the random objects
             whichObjsToMove = r.sample(range(0,numObjects), npr.randint(0,numObjects))
             fal = npr.randint(0,numLocations) # Final agent location
             finalObjLocs = [ ( fal if i in whichObjsToMove else loc ) for i,loc in enumerate(self.objectPositions) ]
@@ -56,7 +56,7 @@ class TransportTask(SimpleGridTask):
         if action == self.numLocations:
             # For each object with same position as agent, make it held
             for i in range(0,self.numObjects):
-                if self.objectPositions[i] == self.agentLocation: 
+                if self.objectPositions[i] == self.agentLocation:
                     self.objHeldStatus[i] = True
         # Movement action
         else:
@@ -70,7 +70,7 @@ class TransportTask(SimpleGridTask):
             self.history.append(inAction) # Record input action, not actual one that occurred
             self.history.append(self.getStateRep())
             self.hiddenHistory.append(copy.copy(self.objHeldStatus))
-        
+
     def display(self):
         print('Environment (NL = '+str(self.numLocations)+', NO = '+str(self.numObjects)+')')
         print('Current State\n\tAgent Location:',self.agentLocation,
@@ -103,7 +103,7 @@ class TransportTask(SimpleGridTask):
         numObjsMoved = [] # For analysis purposes
         for traj in range(0,num_trajectories):
             if verbose and traj % print_every == 0: print("Starting traj",traj)
-            # Generate env with random placement 
+            # Generate env with random placement
             cenv = TransportTask(numObjects=numObjects,numLocations=numLocations,stochasticity=noise_level)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
@@ -147,11 +147,11 @@ def transport_main():
     print('In Main')
     env = TransportTask()
 
-    if False:
-        data = TransportTask.generateRandomTrajectories(10_000,10,verbose=True,print_every=1000)
+    if True:
+        data = TransportTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
         toSave = [env,data]
         import dill, sys
-        with open("transport-data-try2.dill",'wb') as outFile:
+        with open("transport-data-test-small.dill",'wb') as outFile:
             print('Saving')
             dill.dump(toSave,outFile)
         sys.exit(0)
@@ -166,11 +166,7 @@ def transport_main():
     thist = env.getHistoryAsTupleArray()
     print(thist[0])
     print('--')
-    
+
 
 if __name__ == '__main__':
     transport_main()
-
-
-
-
