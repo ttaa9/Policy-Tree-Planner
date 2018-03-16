@@ -98,17 +98,17 @@ class TransportTask(SimpleGridTask):
 
     # Static method: generates random data for forward model training
     def generateRandomTrajectories(num_trajectories,max_num_steps,numObjects=4,numLocations=8,
-            verbose=False,noise_level=0,grab_obj_prob=0.5,grab_no_obj_prob=0.25):
+            verbose=False,noise_level=0,grab_obj_prob=0.5,grab_no_obj_prob=0.25,print_every=1):
         trajs = [] # Store output trajectories
         numObjsMoved = [] # For analysis purposes
         for traj in range(0,num_trajectories):
-            if verbose: print("Starting traj",traj)
+            if verbose and traj % print_every == 0: print("Starting traj",traj)
             # Generate env with random placement 
             cenv = TransportTask(numObjects=numObjects,numLocations=numLocations,stochasticity=noise_level)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
             objPos_0 = copy.copy(cenv.objectPositions)
-            if verbose: print("\tStart:",str([objPos_0,cenv.agentLocation])+", N_a:",num_acs_to_run)
+            if verbose and traj % print_every == 0: print("\tStart:",str([objPos_0,cenv.agentLocation])+", N_a:",num_acs_to_run)
             def randomGrabVsMove(prob):
                 if r.random() <= prob: cenv.performAction(cenv.numActions-1) # Grab
                 else:                  cenv.performAction( npr.randint(0,cenv.numActions-1) ) # Move
@@ -123,7 +123,7 @@ class TransportTask(SimpleGridTask):
                 if objHere: randomGrabVsMove(grab_obj_prob)    # Grab current object or move
                 else:       randomGrabVsMove(grab_no_obj_prob) # Useless grab attempt or move
             numObjsMoved.append( sum( 0 if objPos_0[i]==cenv.objectPositions[i] else 1 for i in range(0,cenv.numObjects) ) )
-            if verbose: print("\tEndObjPositions:",str(cenv.objectPositions)+", Num objects moved:",numObjsMoved[-1])
+            if verbose and traj % print_every == 0: print("\tEndObjPositions:",str(cenv.objectPositions)+", Num objects moved:",numObjsMoved[-1])
             # Save the history as a trajectory
             trajs.append( cenv.getHistoryAsTupleArray() )
         return trajs
@@ -144,7 +144,18 @@ class TransportTask(SimpleGridTask):
 ### Testing ###
 
 def transport_main():
+    print('In Main')
     env = TransportTask()
+
+    if False:
+        data = TransportTask.generateRandomTrajectories(10_000,10,verbose=True,print_every=1000)
+        toSave = [env,data]
+        import dill, sys
+        with open("transport-data-try2.dill",'wb') as outFile:
+            print('Saving')
+            dill.dump(toSave,outFile)
+        sys.exit(0)
+
     for i in range(0,100):
         j = np.random.randint( env.numActions )
         print('--')
@@ -153,9 +164,9 @@ def transport_main():
         env.display()
     env.displayHistory()
     thist = env.getHistoryAsTupleArray()
-    print(thist[0:5])
+    print(thist[0])
     print('--')
-    data = TransportTask.generateRandomTrajectories(50,45,verbose=True)
+    
 
 if __name__ == '__main__':
     transport_main()
