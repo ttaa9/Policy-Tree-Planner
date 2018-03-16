@@ -56,13 +56,35 @@ class SimpleGridTask:
         return action
 
 
-
-
-
-
-
-
-
+    # Static helper method to help construct training set
+    # Returns (,labels,lengths)
+    # Note: not seq2seq, only predicts final state (TODO in another function)
+    def convertDataSetIntoSeqToLabelSet(dataset,maxSeqLen=None):
+        # Each input is a sequence of concatenated state-actions pairs with variable length
+        # e.g [ [(s_1,a_1),...,(s_k,a_k)], ..., [(s_1,a_1),...,(s_m,a_m)] ]
+        # Note that each pair is several concatenated vectors in s_j, with an additional concatenated action vector a_j
+        inputs = [] 
+        # Each label is a state (at the end of the training)
+        # e.g. [ s_k+1, ..., s_m+1 ]
+        labels = [] 
+        # Each number gives the length of the input sequence
+        # e.g. [k, ..., m]
+        lengths = []
+        # Feature length (s_i + a_i)
+        featlen = len( dataset[0][0][0] ) + len( dataset[0][0][1] )
+        # Determine padding if not given
+        if maxSeqLen is None:
+            raise NotImplementedError( "Must give max seq len" ) # for now
+        # For every generated trajectory, construct a training sequence
+        for traj in dataset:
+            currLen = len(traj)
+            lengths.append(currLen)
+            labels.append(traj[-1][-1]) # last state of last triplet
+            currPairs = [ np.concatenate((t[0],t[1])) for t in traj ] # The input sequence
+            if len(currPairs) < maxSeqLen:
+                currPairs += ([ np.zeros(featlen) ]*( maxSeqLen - len(currPairs) ))
+            inputs.append(currPairs)
+        return (inputs,labels,lengths)
 
 
 
