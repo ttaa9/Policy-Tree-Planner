@@ -1,6 +1,8 @@
 import numpy as np, numpy.random as npr, random as r, copy
 from SimpleTask import SimpleGridTask
 
+#TODO Add goal state to state function
+
 class TransportTask(SimpleGridTask):
     '''
     States are the locations of the agent and the objects.
@@ -9,7 +11,8 @@ class TransportTask(SimpleGridTask):
     Note: multiple objects can be in one location.
     '''
 
-    def __init__(self,numObjects=4,numLocations=8,objLocs=None,agentStartLocation=None,goalState=None,track_history=True,stochasticity=0.0):
+    def __init__(self,numObjects=4,numLocations=8,objLocs=None,agentStartLocation=None,
+            goalState=None,track_history=True,stochasticity=0.0):
         ## Checks
         if not objLocs is None and any(sobj >= numLocations for sobj in objLocs):
             raise ValueError('Untenable object locations',objLocs)
@@ -47,6 +50,10 @@ class TransportTask(SimpleGridTask):
         self.isNoisy, self.stochasticity = stochasticity > 0.0, stochasticity
         # Helper function
         self._binarizeBools = lambda r: [ 1 if t else 0 for t in r ]
+        # Length of the one-hot encoded state
+        # Each obj + agent has size numLocations in its one-hot vec
+        #TODO alter when adding goal to state function
+        #self.sizeOf
 
     # Input: integer representing the action
     def performAction(self,inAction):
@@ -127,6 +134,12 @@ class TransportTask(SimpleGridTask):
             # Save the history as a trajectory
             trajs.append( cenv.getHistoryAsTupleArray() )
         return trajs
+
+    # Input: s_i as a concatenation of one-hot vectors
+    # Returns: [v_1,...,v_n] where cat(v_1,...,v_n)
+    def deconcatenateOneHotStateVector(self,vec):
+        ntargs = self.numObjects + 1 # + 1 for the agent
+        return [ vec[c:c+self.numLocations] for c in range(0,ntargs,self.numLocations) ]
 
     # Note that which objects are held is unobserved
     def displayHistory(self):

@@ -29,7 +29,7 @@ class SimpleGridTask:
         self.track_history = track_history
         self.history = [ ]
         # Add initial state to history if desired
-        if self.track_history: 
+        if self.track_history:
             self.history.append(self.getStateRep())
             self.hiddenHistory = hidden
 
@@ -49,9 +49,9 @@ class SimpleGridTask:
             return None
 
     def _stochasticAction(self,inAction):
-        if self.isNoisy: 
+        if self.isNoisy:
             action = npr.randint(0,self.numActions) if r.random() < self.stochasticity else inAction
-        else: 
+        else:
             action = inAction
         return action
 
@@ -63,10 +63,10 @@ class SimpleGridTask:
         # Each input is a sequence of concatenated state-actions pairs with variable length
         # e.g [ [(s_1,a_1),...,(s_k,a_k)], ..., [(s_1,a_1),...,(s_m,a_m)] ]
         # Note that each pair is several concatenated vectors in s_j, with an additional concatenated action vector a_j
-        inputs = [] 
+        inputs = []
         # Each label is a state (at the end of the training)
         # e.g. [ s_k+1, ..., s_m+1 ]
-        labels = [] 
+        labels = []
         # Each number gives the length of the input sequence
         # e.g. [k, ..., m]
         lengths = []
@@ -86,9 +86,5 @@ class SimpleGridTask:
             inputs.append(currPairs)
         return (inputs,labels,lengths)
 
-
-
-
-
-
-
+    def deconcatenateOneHotStateVector(self,vec):
+        raise NotImplementedError( "Required Method" )

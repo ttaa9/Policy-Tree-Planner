@@ -1,4 +1,4 @@
-import numpy as np, numpy.random as npr, random as r
+import numpy as np, numpy.random as npr, random as r, copy
 from SimpleTask import SimpleGridTask
 
 class NavigationTask(SimpleGridTask):
@@ -13,6 +13,9 @@ class NavigationTask(SimpleGridTask):
     #TODO can then use sum of cross-entropies instead as loss. May make more sense.
     #TODO see transport task.
 
+    #TODO Add goal position to the state
+    #TODO
+
     ### Static class variables ###
      # Set of possible actions
     numActions = 10
@@ -26,7 +29,7 @@ class NavigationTask(SimpleGridTask):
         "Move_2"     ,
         "Move_3"     ,
         "Move_4"     ,
-        "Move_5"     
+        "Move_5"
     ]
     # Actor Orientations
     oriens = ['N', 'E', 'S', 'W'] # 0,1,2,3
@@ -41,20 +44,20 @@ class NavigationTask(SimpleGridTask):
         # Target position/state
         self.goal_pos = np.array([self.w-1,self.h-1]) if goal_pos is None else goal_pos
         # Initial position and orientation of agent (i.e. the state of the system)
-        self.agent_pos = np.array([0,0]) if agent_start_pos is None else agent_start_pos[0]
+        self.agent_pos = np.array([0,0]) if agent_start_pos is None else copy.copy(agent_start_pos[0])
         self.agent_orientation = 0 if agent_start_pos is None else self.oriensDict[agent_start_pos[1]]
         # Add initial state to history if desired
         #if self.track_history: self.history.append(self.getStateRep())
         # Add stochasticity to the environment transitions (stoch value is prob of uniformly random action instead)
-        self.stochasticity, self.isNoisy = stochasticity, stochasticity > 0.0 
+        self.stochasticity, self.isNoisy = stochasticity, stochasticity > 0.0
         # Call superclass constructor
         super(NavigationTask,self).__init__(track_history)
 
     # Action should be an int
     def performAction(self,actionIn):
         # Add noise in stochastic case
-        action = self._stochasticAction(actionIn)         
-        # Note: Do nothing if action == 0 
+        action = self._stochasticAction(actionIn)
+        # Note: Do nothing if action == 0
         # Change facing
         if action >= 1 and action <= 4:
             self.agent_orientation = action - 1
@@ -82,7 +85,7 @@ class NavigationTask(SimpleGridTask):
 
     def getStateRep(self):
         p = np.zeros(6) # pos_x, pos_y, one_hot_orien
-        p[0:2] = self.agent_pos # position as two integers in [0,w-1],[0,h-1] resp
+        p[0:2] = copy.copy(self.agent_pos) # position as two integers in [0,w-1],[0,h-1] resp
         p[2 + self.agent_orientation] = 1 # orientation as one-hot
         return p # Env state
 
@@ -107,7 +110,11 @@ class NavigationTask(SimpleGridTask):
         a[i,j,k] = 1
         return a.flatten()
 
-    # 
+    #TODO
+    def deconcatenateOneHotStateVector(vec):
+        pass
+
+    #
     def _convertOneHotToHistoryState(self,one_hot_state_array):
         i,j,k = list(zip(*np.where(one_hot_state_array == 1)))[0]
         orien = self._intToOneHot(k,len(self.oriens)) # one-hot orientation
@@ -120,7 +127,7 @@ class NavigationTask(SimpleGridTask):
         trajs = []
         for traj in range(0,num_trajectories):
             if verbose: print("Starting traj",traj)
-            # Generate env with random placement 
+            # Generate env with random placement
             p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
             start_pos = [p_0, r.choice(NavigationTask.oriens)]
             cenv = NavigationTask(width=width,height=height,agent_start_pos=start_pos,goal_pos=None,
@@ -129,7 +136,7 @@ class NavigationTask(SimpleGridTask):
             num_acs_to_run = npr.randint(1,max_num_steps)
             if verbose: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run)
             for ac in range(0,num_acs_to_run):
-                # Change direction vs move 
+                # Change direction vs move
                 changeDir = r.random() >= 0.5
                 if changeDir: # Change direction
                     newDir_action = npr.randint(0,len(NavigationTask.oriens)) + 1 # Add 1 to skip "do nothing"
@@ -161,6 +168,3 @@ def navmain():
 
 if __name__ == '__main__':
     navmain()
-
-
-

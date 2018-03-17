@@ -113,7 +113,16 @@ def main():
     pred = dynamicRNN(x, seqlen, weights, biases)
 
     # Define loss and optimizer
-    cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+    #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
+    #TODO fix this to be the sum of cross-entropies across the state
+    cost = 0
+    for i in range(0,batch_size):
+        for j in range()
+         cost += tf.nn.softmax_cross_entropy_with_logits
+
+    cost = tf.reduce_mean(
+        tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y)
+    )
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(cost)
 
     # Evaluate model
