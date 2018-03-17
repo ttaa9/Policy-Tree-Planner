@@ -1,9 +1,10 @@
 from SimpleTask import SimpleGridTask
 import numpy as np, numpy.random as npr, random as r, SimpleTask
 from TransportTask import TransportTask
+from NavTask import NavigationTask
 import tensorflow as tf
 
-# See: https://github.com/aymericdamien/TensorFlow-Examples/
+# Derived from: https://github.com/aymericdamien/TensorFlow-Examples/
 class SeqData():
     def __init__(self,dataFile):
         import dill
@@ -40,17 +41,18 @@ class SeqData():
 
 def main():
     print('Reading Data')
-    trainf, validf = "transport-data-train-small.dill", "transport-data-test-small.dill"
+    s = 'navigation'
+    trainf, validf = s+"-data-train-small.dill", s+"-data-test-small.dill"
     train, valid   = SeqData(trainf), SeqData(validf)
     print('Defining Model')
     # Parameters
     learning_rate = 0.01
-    training_steps = 2000 # 10000
-    batch_size = 128
+    training_steps = 5000 #2000 # 10000
+    batch_size = 256 #128
     display_step = 200
     # Network Parameters
     seq_max_len = 10 # Sequence max length
-    n_hidden = train.lenOfInput # hidden layer num of features
+    n_hidden = 256 #5*train.lenOfInput # hidden layer num of features
     n_classes = train.lenOfState # linear sequence or not
     print('\tN_Hidden =',n_hidden,'\n\tMax_Seq_Len =',seq_max_len)
     trainset = train #ToySequenceData(n_samples=1000, max_seq_len=seq_max_len)
@@ -96,18 +98,13 @@ def main():
     # Creating dynamicRNN (manually) and running it on the sequence
     pred = dynamicRNN(x, seqlen, weights, biases)
     # Define loss and optimizer
-    #cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
-    #TODO fix this to be the sum of cross-entropies across the state
     cost = 0
     for i in range(0,batch_size):
         predVecs = train.env.deconcatenateOneHotStateVector(pred[i,:])
         labelVecs = train.env.deconcatenateOneHotStateVector(y[i,:])
         for pv,lv in zip(predVecs,labelVecs):
             cost += tf.nn.softmax_cross_entropy_with_logits(logits=pv,labels=lv)
-#    cost = tf.reduce_mean(
-#       tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y)
-#    )
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(cost)
+    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
     # Evaluate model
     correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))

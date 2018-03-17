@@ -9,13 +9,6 @@ class NavigationTask(SimpleGridTask):
     Note that position is used as a tuple of integers until the one-hot version is needed.
     '''
 
-    #TODO should consider concatenating one-hot versions of the pos_x, pos_y, orien instead.
-    #TODO can then use sum of cross-entropies instead as loss. May make more sense.
-    #TODO see transport task.
-
-    #TODO Add goal position to the state
-    #TODO
-
     ### Static class variables ###
      # Set of possible actions
     numActions = 10
@@ -86,10 +79,12 @@ class NavigationTask(SimpleGridTask):
         atReward = self.goal_pos[0]==self.agent_pos[0] and self.goal_pos[1]==self.agent_pos[1]
         return 1 if atReward else 0
 
+    # Note: this is not one-hot, so for fair comparison, we not want to use this for training directly
     def getStateRep(self):
-        p = np.zeros(6) # pos_x, pos_y, one_hot_orien
+        p = np.zeros(8) # pos_x, pos_y, one_hot_orien, goal_x, goal_y
         p[0:2] = copy.copy(self.agent_pos) # position as two integers in [0,w-1],[0,h-1] resp
         p[2 + self.agent_orientation] = 1 # orientation as one-hot
+        p[-2:] = copy.copy(self.goal_pos) # goal pos as two integers 
         return p # Env state
 
     def display(self):
@@ -106,30 +101,48 @@ class NavigationTask(SimpleGridTask):
             if i < n-1: print('Action '+str(k)+':',self.actions[self.history[i+1]].replace("_"," "))
             k += 1; i += 2
 
-    def _convertHistoryStateToOneHot(self,history_state):
-        i, j = int(history_state[0]), int(history_state[1])
-        k = self._oneHotToInt( history_state[2] )
-        a = np.zeros((self.w, self.h, self.numActions))
-        a[i,j,k] = 1
-        return a.flatten()
+    # Note: returns concatenated onehot vectors
+    # There are 2 + 1 + 2 = 5 one-hot vecs of respective sizes (self.w +self.h) + numOriens + (self.w +self.h)
+    def _convertHistoryStateToOneHot(self,h):
+        px = self._intToOneHot(int(h[0]),self.w)
+        py = self._intToOneHot(int(h[1]),self.h)
+        gx = self._intToOneHot(int(h[-2]),self.w)
+        gy = self._intToOneHot(int(h[-1]),self.h)
+        orien = h[2:-2]
+        return np.concatenate((px,py,orien,gx,gy))
+        # i, j = int(history_state[0]), int(history_state[1])
+        # k = self._oneHotToInt( history_state[2] )
+        # a = np.zeros((self.w, self.h, self.numActions))
+        # a[i,j,k] = 1
+        # return a.flatten()
 
-    #TODO
-    def deconcatenateOneHotStateVector(vec):
-        pass
+    def deconcatenateOneHotStateVector(self,vec):
+        w,h,no = self.w,self.h,len(self.oriens)
+        starts, incs = [0, w, w+h, w+h+no, 2*w+h+no], [w, h, no, w, h]
+        return [ vec[s:s+inc] for s,inc in zip(starts,incs) ]
 
     #
     def _convertOneHotToHistoryState(self,one_hot_state_array):
-        i,j,k = list(zip(*np.where(one_hot_state_array == 1)))[0]
-        orien = self._intToOneHot(k,len(self.oriens)) # one-hot orientation
-        a = np.zeros(6)
-        a[0],a[1],a[2:] = i,j,orien
+        a = np.zeros(8) # p_x,p_y,orien,g_x,g_y
+        incs = np.cumsum([0, self.w, self.h, self.numOriens, self.w, self.h])
+        a[0] = self._oneHotToInt(one_hot_state_array[incs[0]:incs[1]])
+        a[1] = self._oneHotToInt(one_hot_state_array[incs[1]:incs[2]])
+        a[2] = one_hot_state_array[incs[2]:incs[3]]
+        a[3] = self._oneHotToInt(one_hot_state_array[incs[3]:incs[4]])
+        a[4] = self._oneHotToInt(one_hot_state_array[incs[4]:incs[5]])
         return a
+        # i,j,k = list(zip(*np.where(one_hot_state_array == 1)))[0]
+        # orien = self._intToOneHot(k,len(self.oriens)) # one-hot orientation
+        # a = np.zeros(6)
+        # a[0],a[1],a[2:] = i,j,orien
+        # return a
 
     # Static method: generates random data for forward model training
-    def generateRandomTrajectories(num_trajectories,max_num_steps,width=15,height=15,verbose=False,noise_level=0):
+    def generateRandomTrajectories(num_trajectories,max_num_steps,width=15,height=15,
+            verbose=False,noise_level=0,print_every=1):
         trajs = []
         for traj in range(0,num_trajectories):
-            if verbose: print("Starting traj",traj)
+            if verbose and traj % print_every == 0: print("Starting traj",traj)
             # Generate env with random placement
             p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
             start_pos = [p_0, r.choice(NavigationTask.oriens)]
@@ -137,7 +150,7 @@ class NavigationTask(SimpleGridTask):
                 track_history=True,stochasticity=noise_level,maxSteps=max_num_steps)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
-            if verbose: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run)
+            if verbose and traj % print_every == 0: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run)
             for ac in range(0,num_acs_to_run):
                 # Change direction vs move
                 changeDir = r.random() >= 0.5
@@ -156,18 +169,28 @@ class NavigationTask(SimpleGridTask):
 ### Testing ###
 
 def navmain():
-    env = NavigationTask(stochasticity=0.2)
-    for i in range(0,1000):
-        j = np.random.randint( env.numActions )
+    env = NavigationTask() #(stochasticity=0.2)
+    if False:
+        for i in range(0,1000):
+            j = np.random.randint( env.numActions )
+            print('--')
+            print(env.actions[j])
+            env.performAction(j)
+            env.display()
+        env.displayHistory()
+        thist = env.getHistoryAsTupleArray()
+        print(thist[0:5])
         print('--')
-        print(env.actions[j])
-        env.performAction(j)
-        env.display()
-    env.displayHistory()
-    thist = env.getHistoryAsTupleArray()
-    print(thist[0:5])
-    print('--')
-    data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
+        data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
+    if True:
+        data = NavigationTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
+        toSave = [env,data]
+        import dill, sys
+        with open("navigation-data-test-small.dill",'wb') as outFile:
+            print('Saving')
+            dill.dump(toSave,outFile)
+        sys.exit(0)
+
 
 if __name__ == '__main__':
     navmain()

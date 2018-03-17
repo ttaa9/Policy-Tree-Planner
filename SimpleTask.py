@@ -55,7 +55,6 @@ class SimpleGridTask:
             action = inAction
         return action
 
-
     # Static helper method to help construct training set
     # Returns (,labels,lengths)
     # Note: not seq2seq, only predicts final state (TODO in another function)
