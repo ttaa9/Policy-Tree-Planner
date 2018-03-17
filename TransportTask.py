@@ -50,6 +50,9 @@ class TransportTask(SimpleGridTask):
         self._binarizeBools = lambda r: [ 1 if t else 0 for t in r ]
         # Store the max number of steps allowed for a generated trajectory, if it is given
         self.max_num_steps = maxSteps
+        # 
+        # TODO change this to include the goal state
+        self.stateSubVectors = 2*self.numObjects + 1
 
     # Input: integer representing the action
     def performAction(self,inAction):
@@ -99,7 +102,7 @@ class TransportTask(SimpleGridTask):
 
     # Note: the one-hot form is actually multiple concatenated one-hot vectors
     def _convertOneHotToHistoryState(self,one_hot_state):
-        q = np.reshape(one_hot_state,(self.numObjects + 1,self.numLocations))
+        q = np.reshape(one_hot_state,(2*self.numObjects + 1,self.numLocations))
         return [ self._oneHotToInt(u) for u in q ]
 
     # Static method: generates random data for forward model training
@@ -136,8 +139,9 @@ class TransportTask(SimpleGridTask):
 
     # Input: s_i as a concatenation of one-hot vectors
     # Returns: [v_1,...,v_n] where cat(v_1,...,v_n)
+    # TODO change to allow for goal state in state
     def deconcatenateOneHotStateVector(self,vec):
-        ntargs = self.numObjects + 1 # + 1 for the agent
+        ntargs = 2*self.numObjects + 1 # + 1 for the agent
         return [ vec[c:c+self.numLocations] for c in range(0,ntargs,self.numLocations) ]
 
     # Note that which objects are held is unobserved
@@ -163,7 +167,7 @@ def transport_main():
         data = TransportTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
         toSave = [env,data]
         import dill, sys
-        with open("transport-data-test-small.dill",'wb') as outFile:
+        with open("transport-data-train-small.dill",'wb') as outFile:
             print('Saving')
             dill.dump(toSave,outFile)
         sys.exit(0)

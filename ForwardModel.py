@@ -41,20 +41,23 @@ class SeqData():
 
 def main():
     print('Reading Data')
-    s = 'navigation'
+    s = 'transport' #'navigation'
     trainf, validf = s+"-data-train-small.dill", s+"-data-test-small.dill"
     train, valid   = SeqData(trainf), SeqData(validf)
+    # classType = NavigationTask if s == 'navigation' else TransportTask
+    print(train.env.stateSubVectors)
     print('Defining Model')
     # Parameters
     learning_rate = 0.01
-    training_steps = 5000 #2000 # 10000
-    batch_size = 256 #128
+    training_steps = 3000 #2000 # 10000
+    batch_size = 256 #256 #128
     display_step = 200
     # Network Parameters
     seq_max_len = 10 # Sequence max length
-    n_hidden = 256 #5*train.lenOfInput # hidden layer num of features
+    n_hidden = 256 #128 #5*train.lenOfInput # hidden layer num of features
     n_classes = train.lenOfState # linear sequence or not
-    print('\tN_Hidden =',n_hidden,'\n\tMax_Seq_Len =',seq_max_len)
+    print('\tN_Hidden =',n_hidden,'\n\tMax_Seq_Len =',seq_max_len,
+        '\n\tInputLen =',train.lenOfInput)
     trainset = train #ToySequenceData(n_samples=1000, max_seq_len=seq_max_len)
     testset = valid #ToySequenceData(n_samples=500, max_seq_len=seq_max_len)
     # tf Graph input
@@ -98,16 +101,17 @@ def main():
     # Creating dynamicRNN (manually) and running it on the sequence
     pred = dynamicRNN(x, seqlen, weights, biases)
     # Define loss and optimizer
-    cost = 0
+    cost, accTotal = 0, 0
     for i in range(0,batch_size):
         predVecs = train.env.deconcatenateOneHotStateVector(pred[i,:])
         labelVecs = train.env.deconcatenateOneHotStateVector(y[i,:])
         for pv,lv in zip(predVecs,labelVecs):
-            cost += tf.nn.softmax_cross_entropy_with_logits(logits=pv,labels=lv)
+            cost += tf.nn.softmax_cross_entropy_with_logits(logits=pv, labels=lv)
+            accTotal += tf.cast(tf.equal(tf.argmax(pv,axis=0), tf.argmax(lv,axis=0)), tf.float32)
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
     # Evaluate model
-    correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
-    accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+    #correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
+    accuracy = accTotal / (batch_size * train.env.stateSubVectors) #tf.reduce_mean(tf.cast(correct_pred, tf.float32))
     # Initialize the variables (i.e. assign their default value)
     init = tf.global_variables_initializer()
     # Start training

@@ -27,6 +27,7 @@ class NavigationTask(SimpleGridTask):
     # Actor Orientations
     oriens = ['N', 'E', 'S', 'W'] # 0,1,2,3
 
+
     # Constructor
     def __init__(self,width=15,height=15,agent_start_pos=[np.array([0,0]),'N'],goal_pos=None,
             track_history=True,stochasticity=0.0,maxSteps=None):
@@ -48,6 +49,9 @@ class NavigationTask(SimpleGridTask):
         super(NavigationTask,self).__init__(track_history)
         # Store the max number of steps allowed for a generated trajectory, if it is given
         self.max_num_steps = maxSteps
+        # Number of one-hot subvectors of the concatenated state vector
+        # Agent pos + orien & goal pos
+        self.stateSubVectors = 2 + 1 + 2       
 
     # Action should be an int
     def performAction(self,actionIn):
@@ -186,7 +190,7 @@ def navmain():
         data = NavigationTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
         toSave = [env,data]
         import dill, sys
-        with open("navigation-data-test-small.dill",'wb') as outFile:
+        with open("navigation-data-train-small.dill",'wb') as outFile:
             print('Saving')
             dill.dump(toSave,outFile)
         sys.exit(0)
