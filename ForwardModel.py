@@ -52,7 +52,7 @@ def main():
     seq_max_len = 10 # Sequence max length
     n_hidden = train.lenOfInput # hidden layer num of features
     n_classes = train.lenOfState # linear sequence or not
-    print('')
+    print('\tN_Hidden =',n_hidden,'\n\tMax_Seq_Len =',seq_max_len)
     trainset = train #ToySequenceData(n_samples=1000, max_seq_len=seq_max_len)
     testset = valid #ToySequenceData(n_samples=500, max_seq_len=seq_max_len)
     # tf Graph input

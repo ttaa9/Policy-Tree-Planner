@@ -1,8 +1,6 @@
 import numpy as np, numpy.random as npr, random as r, copy
 from SimpleTask import SimpleGridTask
 
-#TODO Add goal state to state function
-
 class TransportTask(SimpleGridTask):
     '''
     States are the locations of the agent and the objects.
@@ -12,7 +10,7 @@ class TransportTask(SimpleGridTask):
     '''
 
     def __init__(self,numObjects=4,numLocations=8,objLocs=None,agentStartLocation=None,
-            goalState=None,track_history=True,stochasticity=0.0):
+            goalState=None,track_history=True,stochasticity=0.0,maxSteps=None):
         ## Checks
         if not objLocs is None and any(sobj >= numLocations for sobj in objLocs):
             raise ValueError('Untenable object locations',objLocs)
@@ -42,7 +40,7 @@ class TransportTask(SimpleGridTask):
             fal = npr.randint(0,numLocations) # Final agent location
             finalObjLocs = [ ( fal if i in whichObjsToMove else loc ) for i,loc in enumerate(self.objectPositions) ]
             self.goalState = [ fal, list(finalObjLocs) ]
-        else: self.goalState = goalState
+        else: self.goalState = goalState 
         # Call superclass constructor
         # Also track which objects are being held. Note that this is not an observed property to the agent. (?)
         super(TransportTask,self).__init__(track_history,hidden=[copy.copy(self.objHeldStatus)])
@@ -50,10 +48,8 @@ class TransportTask(SimpleGridTask):
         self.isNoisy, self.stochasticity = stochasticity > 0.0, stochasticity
         # Helper function
         self._binarizeBools = lambda r: [ 1 if t else 0 for t in r ]
-        # Length of the one-hot encoded state
-        # Each obj + agent has size numLocations in its one-hot vec
-        #TODO alter when adding goal to state function
-        #self.sizeOf
+        # Store the max number of steps allowed for a generated trajectory, if it is given
+        self.max_num_steps = maxSteps
 
     # Input: integer representing the action
     def performAction(self,inAction):
@@ -89,14 +85,17 @@ class TransportTask(SimpleGridTask):
     def getReward(self):
         return 1 if all( self.goalState[1][i] == self.objectPositions[i] for i in range(0,self.numObjects) ) else 0
 
-    # State = {object positions & agent pos}
+    # State = {object positions & agent pos & goal positions}
     # Convert each position to one-hot and concatenate them
-    # can use a loss of sum of cross-entropies then (?)
+    # Note: goalState = [fal, finalObjLocs], where 
+    #   fal -> integer for agent location
+    #   finalObjLocs -> list of integers
     # Output format: array of numObjects+1 concatenated one-hot vectors, each of length numLocations
     def getStateRep(self):
         n,oh = self.numLocations, lambda i: self._intToOneHot(i,self.numLocations)
+        g = [oh(loc) for loc in self.goalState[1]] + [oh(self.goalState[0])]
         a = [oh(loc) for loc in self.objectPositions] + [oh(self.agentLocation)]
-        return np.array(a).flatten()
+        return np.array(a + g).flatten() # Appending goal state to current state = full state
 
     # Note: the one-hot form is actually multiple concatenated one-hot vectors
     def _convertOneHotToHistoryState(self,one_hot_state):
@@ -111,7 +110,7 @@ class TransportTask(SimpleGridTask):
         for traj in range(0,num_trajectories):
             if verbose and traj % print_every == 0: print("Starting traj",traj)
             # Generate env with random placement
-            cenv = TransportTask(numObjects=numObjects,numLocations=numLocations,stochasticity=noise_level)
+            cenv = TransportTask(numObjects=numObjects,numLocations=numLocations,stochasticity=noise_level,maxSteps=max_num_steps)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
             objPos_0 = copy.copy(cenv.objectPositions)

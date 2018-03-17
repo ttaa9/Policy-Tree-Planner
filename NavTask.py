@@ -35,7 +35,8 @@ class NavigationTask(SimpleGridTask):
     oriens = ['N', 'E', 'S', 'W'] # 0,1,2,3
 
     # Constructor
-    def __init__(self,width=15,height=15,agent_start_pos=[np.array([0,0]),'N'],goal_pos=None,track_history=True,stochasticity=0.0):
+    def __init__(self,width=15,height=15,agent_start_pos=[np.array([0,0]),'N'],goal_pos=None,
+            track_history=True,stochasticity=0.0,maxSteps=None):
         # Grid size
         self.w, self.h = width, height
         # Convenience Dictionaries
@@ -52,6 +53,8 @@ class NavigationTask(SimpleGridTask):
         self.stochasticity, self.isNoisy = stochasticity, stochasticity > 0.0
         # Call superclass constructor
         super(NavigationTask,self).__init__(track_history)
+        # Store the max number of steps allowed for a generated trajectory, if it is given
+        self.max_num_steps = maxSteps
 
     # Action should be an int
     def performAction(self,actionIn):
@@ -131,7 +134,7 @@ class NavigationTask(SimpleGridTask):
             p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
             start_pos = [p_0, r.choice(NavigationTask.oriens)]
             cenv = NavigationTask(width=width,height=height,agent_start_pos=start_pos,goal_pos=None,
-                track_history=True,stochasticity=noise_level)
+                track_history=True,stochasticity=noise_level,maxSteps=max_num_steps)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
             if verbose: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run)
