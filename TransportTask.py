@@ -164,12 +164,12 @@ def transport_main():
     env = TransportTask()
 
     if True:
-        data = TransportTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
+        data = TransportTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
         toSave = [env,data]
-        import dill, sys
+        import pickle, sys
         with open("transport-data-train-small.dill",'wb') as outFile:
             print('Saving')
-            dill.dump(toSave,outFile)
+            pickle.dump(toSave,outFile)
         sys.exit(0)
 
     for i in range(0,100):

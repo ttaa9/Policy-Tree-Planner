@@ -187,12 +187,12 @@ def navmain():
         print('--')
         data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
     if True:
-        data = NavigationTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
+        data = NavigationTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
         toSave = [env,data]
-        import dill, sys
-        with open("navigation-data-train-small.dill",'wb') as outFile:
+        import pickle, sys
+        with open("navigation-data-test-small.dill",'wb') as outFile:
             print('Saving')
-            dill.dump(toSave,outFile)
+            pickle.dump(toSave,outFile)
         sys.exit(0)
 
 
