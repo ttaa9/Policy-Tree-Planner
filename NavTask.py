@@ -1,6 +1,6 @@
 import numpy as np, numpy.random as npr, random as r, copy
 from SimpleTask import SimpleGridTask
-
+import pickle
 class NavigationTask(SimpleGridTask):
     '''
     Implementation of a simple navigation task on a 2D discrete grid.
@@ -187,13 +187,13 @@ def navmain():
         print('--')
         data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
     if True:
-        data = NavigationTask.generateRandomTrajectories(20_000,10,verbose=True,print_every=1000)
+        data = NavigationTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
         toSave = [env,data]
-        import dill, sys
-        with open("navigation-data-train-small.dill",'wb') as outFile:
+        import pickle, sys
+        with open("navigation-data-train-small.pickle",'wb') as outFile:
             print('Saving')
-            dill.dump(toSave,outFile)
-        sys.exit(0)
+            pickle.dump(toSave,outFile)
+
 
 
 if __name__ == '__main__':
