@@ -190,17 +190,11 @@ def navmain():
         data = NavigationTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
         toSave = [env,data]
         import pickle, sys
-<<<<<<< HEAD
+
         with open("navigation-data-train-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
 
-=======
-        with open("navigation-data-test-small.dill",'wb') as outFile:
-            print('Saving')
-            pickle.dump(toSave,outFile)
-        sys.exit(0)
->>>>>>> 94b64b6c963592d9451d08d0cb358a972a939054
 
 
 if __name__ == '__main__':
