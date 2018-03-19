@@ -220,16 +220,18 @@ def main():
     trainf, validf = s+"-data-train-small.pickle", s+"-data-test-small.pickle"
     train, valid   = SeqData(trainf), SeqData(validf)
     # classType = NavigationTask if s == 'navigation' else TransportTask
-    print(train.env.stateSubVectors)
+    #print(train.env.stateSubVectors)
     print('Defining Model')
     # Parameters
     learning_rate = 0.01
-    training_steps = 3000 #2000 # 10000
+
+    training_steps = 1000 #2000 # 10000
     batch_size = 128 #256 #128
     display_step = 200
     # Network Parameters
     seq_max_len = 10 # Sequence max length
-    n_hidden = 80 #128 #5*train.lenOfInput # hidden layer num of features
+
+    n_hidden = 100 #128 #5*train.lenOfInput # hidden layer num of features
     n_classes = train.lenOfState # linear sequence or not
     print('\tN_Hidden =',n_hidden,'\n\tMax_Seq_Len =',seq_max_len,
         '\n\tInputLen =',train.lenOfInput)
@@ -275,6 +277,8 @@ def main():
         return tf.matmul(outputs, weights['out']) + biases['out']
     # Creating dynamicRNN (manually) and running it on the sequence
     pred = dynamicRNN(x, seqlen, weights, biases)
+    # Generate a saver
+    saver = tf.train.Saver()
     # Define loss and optimizer
     cost, accTotal = 0, 0
     for i in range(0,batch_size):
@@ -307,6 +311,9 @@ def main():
                       "{:.6f}".format(loss) + ", Training Accuracy= " + \
                       "{:.5f}".format(acc))
         print("Optimization Finished!")
+        # Save the variables to disk.
+        save_path = saver.save(sess, "./ckpts/model.ckpt")
+        print("Model saved in file: %s" % save_path)
         # Calculate accuracy
         test_data = testset.data
         test_label = testset.labels
