@@ -79,7 +79,12 @@ class NavigationTask(SimpleGridTask):
             self.history.append(actionIn) # Record input action, not actual one that occurred
             self.history.append(self.getStateRep())
 
-    def getReward(self):
+    def getReward(self,distance_based=False):
+        if distance_based:
+            state = self.getStateRep()
+            d = abs(state[0] - state[-2]) + abs(state[1] - state[-1])
+            r = 1.0 /(1.0 + d) 
+            return r
         atReward = self.goal_pos[0]==self.agent_pos[0] and self.goal_pos[1]==self.agent_pos[1]
         return 1 if atReward else 0
 
