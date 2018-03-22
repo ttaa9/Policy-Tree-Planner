@@ -89,11 +89,21 @@ class NavigationTask(SimpleGridTask):
         return 1 if atReward else 0
 
     # Note: this is not one-hot, so for fair comparison, we not want to use this for training directly
-    def getStateRep(self):
-        p = np.zeros(8) # pos_x, pos_y, one_hot_orien, goal_x, goal_y
-        p[0:2] = copy.copy(self.agent_pos) # position as two integers in [0,w-1],[0,h-1] resp
-        p[2 + self.agent_orientation] = 1 # orientation as one-hot
-        p[-2:] = copy.copy(self.goal_pos) # goal pos as two integers 
+    def getStateRep(self,oneHotOutput=True):
+        if oneHotOutput:
+           noriens = len(self.oriens)
+           inds = np.cumsum([0,self.w,self.h,noriens,self.w,self.h])
+           p = np.zeros(2*self.w + 2*self.h + noriens)
+           p[inds[0]:inds[1]] = self._intToOneHot(self.agent_pos[0],self.w)
+           p[inds[1]:inds[2]] = self._intToOneHot(self.agent_pos[1],self.h)
+           p[inds[2] + self.agent_orientation] = 1
+           p[inds[3]:inds[4]] = self._intToOneHot(self.goal_pos[0],self.w)
+           p[inds[4]:inds[5]] = self._intToOneHot(self.goal_pos[1],self.h)
+        else:
+           p = np.zeros(8) # pos_x, pos_y, one_hot_orien, goal_x, goal_y
+           p[0:2] = copy.copy(self.agent_pos) # position as two integers in [0,w-1],[0,h-1] resp
+           p[2 + self.agent_orientation] = 1 # orientation as one-hot
+           p[-2:] = copy.copy(self.goal_pos) # goal pos as two integers 
         return p # Env state
 
     def display(self):
