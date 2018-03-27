@@ -1,4 +1,4 @@
-from forwardModel2 import *
+from forwardModel3 import *
 from SimpleTask import SimpleGridTask
 import numpy as np, numpy.random as npr, random as r, SimpleTask
 from TransportTask import TransportTask
@@ -90,7 +90,7 @@ class Henaff_Planning(Adam_Optimizer,):
         #fm = tf.stop_gradient(fm) not sure how to use stop gradients here 
             #initialize the x real-valued variable function
             
-        self.initialize_ADAMS() #initialized adams optimizer
+        #self.initialize_ADAMS() #initialized adams optimizer
 
         #self.x=tf.random_normal([self.num_actions,self.len_action]) # initialize self.x as normal distribrution of mean 0 and std 1
       
@@ -102,18 +102,21 @@ class Henaff_Planning(Adam_Optimizer,):
             self.a=tf.nn.softmax(self.x)
     
             current_state=self.s_0
-            c,h = self.fm.get_initial_features(1)
+            state_out = self.fm.get_initial_features(1)
+            #tf.contrib.rnn.LSTMStateTuple(self.c_in,self.h_in)
             for t in range(0,self.num_actions):
                 #pdb.set_trace()
                 print(t)
                 current_state=tf.reshape(current_state,[64,])
                 concat_vec = tf.concat([tf.cast(current_state,dtype=tf.float32),self.a[t]],axis=0)
-                concat_vec=tf.tile(concat_vec,[10])
-                concat_vec=tf.reshape(concat_vec,[1,10,-1]) #[batch size, sequence length, size of concat_vec]
+                #concat_vec=tf.tile(concat_vec,[10])
+                concat_vec=tf.reshape(concat_vec,[1,1,-1]) #[batch size, sequence length, size of concat_vec]
                 
-                current_state,state_out = self.fm.predict(sess.run(concat_vec,feed_dict={self.s_0:init_state}),c,h)
-                c,h = state_out
-            
+                #current_state,state_out = self.fm.predict(sess.run(concat_vec,feed_dict={self.s_0:init_state}),c,h)
+                current_state,state_out = self.fm.dynamic_cell(concat_vec,[1], state_out)
+                c, h = state_out
+                state_out= tf.nn.rnn_cell.LSTMStateTuple(c, h)
+        
             #TODO: is loss distance loss?? Do a custum loss function
             loss = tf.reduce_mean(tf.square(current_state-self.s_f))
             #loss, _ = sess.run([loss,self.x],{self.s_0:init_state,self.s_f:final_state})
@@ -123,16 +126,25 @@ class Henaff_Planning(Adam_Optimizer,):
             #sess.run(self.optimizer, feed_dict={self.input: , self.truevalue:})
 
 
-            print(i)
+            print("Iteration: ####################################### ", i)
             print(tf.global_variables())
-            self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,var_list=['x:0'] )
-        
-            self._train= tf.train.AdamOptimizer(0.01).apply_gradients(self.gradients)
+            #self.optimize= tf.train.AdamOptimizer(0.01).minimize(loss)
+            # self.gradients = tf.gradients(loss, [self.x])
+            # print(self.gradients)
+            # self.x = self.x - tf.multiply(self.gradients[0], 1)
+            self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,['x:0'])
+            for i, (grad, var) in enumerate(self.gradients):
+                if grad is not None:
+                    self.gradients[i] = (grad, var)
+                    print(var)
+            self.optimize= tf.train.AdamOptimizer(0.01).apply_gradients(self.gradients)
 
-
-
-            #self.x=self.step_ADAMS(grad_x,self.x) #step into gradient descent
-            _, loss, value_x = sess.run([self._train,loss,self.x],{self.s_0:init_state,self.s_f:final_state})            
+            if i == 0:
+                init_new_vars_op = tf.initialize_all_variables()
+                sess.run(init_new_vars_op)
+            #self.x=self.step_ADAMS(grad_x,self.x) #step into gradient descent # looking into partial run s
+            loss, value_x, _= sess.run([loss, self.x, self.optimize],{self.s_0:init_state,self.s_f:final_state})
+            print(loss)            
 
         # input [num_actions, len_actions]--> [num_actions]---> [num_actions, len_actions]
         #a=np.one_hot(np.argmax(np.softmax(value_x),axis=1))
@@ -162,9 +174,10 @@ def navmain():
     
     #we want the goal state so replce the first position vector with the goal position vector
     with tf.Graph().as_default(), tf.Session() as sess:
-        hp = Henaff_Planning(10,10,64,30,0.1)#initialize hennaff planning method
         init = tf.global_variables_initializer()
         sess.run(init)
+        hp = Henaff_Planning(10,10,64,30,0.1)#initialize hennaff planning method
+        print(state_i,state_f)
         action_sequence=hp.optimize(state_i,state_f)
 
     #convert action sequence to [num_action,] action numer ids
