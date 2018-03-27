@@ -20,6 +20,9 @@ class SeqData():
         self.batch_id = 0
         self.env = env
         self.datalen = len(self.data)
+        print("Statelen:", self.lenOfState)
+        print("Actionlen:", self.lenOfAction)
+        print("Inputlen:", self.lenOfInput)
         print('\tBuilt')
 
     def next(self, batch_size, random=True):
@@ -134,6 +137,15 @@ class ForwardModel():
         for step in range(1, training_steps + 1):
             batch_x, batch_y, batch_seqlen = trainset.next(batch_size)
             # Run optimization op (backprop)
+            #print("self.c_in",self.c_in)
+            #print("self.h_in",self.h_in)
+            #print("self.input",self.input)
+            #print("batch_x",batch_x)
+            #print("self.trueval",self.truevalue)
+            #print("batch_y",batch_y)
+            #print("self.seqlen",self.seqlen)
+            #print("Batch_seq_len",batch_seqlen)
+            #print('-') 
             sess.run(self.optimizer, feed_dict={self.input: batch_x, self.truevalue: batch_y,
                                            self.seqlen: batch_seqlen,  self.c_in: c, self.h_in:h})
             if step % display_step == 0 or step == 1:

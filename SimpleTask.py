@@ -17,7 +17,7 @@ class SimpleGridTask:
     # Interface
     def performAction( self, action ): raise NotImplementedError( "Required Method" )
     def getReward( self ): raise NotImplementedError( "Required Method" )
-    def getStateRep( self ): raise NotImplementedError( "Required Method" )
+    def getStateRep( self, oneHotOutput ): raise NotImplementedError( "Required Method" )
     def display( self ): raise NotImplementedError( "Required Method" )
 
     # Assuming we are concatentating one-hot here, don't do anything by default
@@ -30,7 +30,7 @@ class SimpleGridTask:
         self.history = [ ]
         # Add initial state to history if desired
         if self.track_history:
-            self.history.append(self.getStateRep())
+            self.history.append(self.getStateRep(oneHotOutput=False))
             self.hiddenHistory = hidden
 
     # Returns the trajectory as a list of tuples (s_{i},a_{i},s_{i+1}) where a & s_j are one-hot

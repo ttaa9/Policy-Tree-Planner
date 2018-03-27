@@ -77,11 +77,11 @@ class NavigationTask(SimpleGridTask):
         # Track history if needed
         if self.track_history:
             self.history.append(actionIn) # Record input action, not actual one that occurred
-            self.history.append(self.getStateRep())
+            self.history.append(self.getStateRep(oneHotOutput=False))
 
     def getReward(self,distance_based=False):
         if distance_based:
-            state = self.getStateRep()
+            state = self.getStateRep(oneHotOutput=False)
             d = abs(state[0] - state[-2]) + abs(state[1] - state[-1])
             r = 1.0 /(1.0 + d) 
             return r
@@ -206,7 +206,7 @@ def navmain():
         toSave = [env,data]
         import pickle, sys
 
-        with open("navigation-data-train-small.pickle",'wb') as outFile:
+        with open("navigation-data-test-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
 
