@@ -87,7 +87,7 @@ class ForwardModel():
         # Hack to build the indexing and retrieve the right output.
         batch_size = tf.shape(outputs)[0]
         # Start indices for each sample
-        index = tf.range(0, batch_size) * self.max_seq_len #+ (seqlen - 1)
+        index = tf.range(0, batch_size) * self.max_seq_len + (seqlen - 1)
         # Indexing
         outputs = tf.gather(tf.reshape(outputs, [-1, self.n_hidden]), index)
         # Linear activation, using outputs computed above

@@ -113,7 +113,7 @@ class Henaff_Planning(Adam_Optimizer,):
                 concat_vec=tf.reshape(concat_vec,[1,1,-1]) #[batch size, sequence length, size of concat_vec]
                 
                 #current_state,state_out = self.fm.predict(sess.run(concat_vec,feed_dict={self.s_0:init_state}),c,h)
-                current_state,state_out = self.fm.dynamic_cell(concat_vec,[1], state_out)
+                current_state,state_out = self.fm.dynamic_cell(concat_vec,tf.constant([1]), state_out)
                 c, h = state_out
                 state_out= tf.nn.rnn_cell.LSTMStateTuple(c, h)
         
@@ -129,21 +129,21 @@ class Henaff_Planning(Adam_Optimizer,):
             print("Iteration: ####################################### ", i)
             print(tf.global_variables())
             #self.optimize= tf.train.AdamOptimizer(0.01).minimize(loss)
-            # self.gradients = tf.gradients(loss, [self.x])
-            # print(self.gradients)
-            # self.x = self.x - tf.multiply(self.gradients[0], 1)
-            self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,['x:0'])
-            for i, (grad, var) in enumerate(self.gradients):
-                if grad is not None:
-                    self.gradients[i] = (grad, var)
-                    print(var)
-            self.optimize= tf.train.AdamOptimizer(0.01).apply_gradients(self.gradients)
+            self.gradients = tf.gradients(loss, [self.x])
+            print(self.gradients)
+            self.x = self.x - tf.multiply(self.gradients[0], 0.01) 
+            # self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,['x:0'])
+            # for i, (grad, var) in enumerate(self.gradients):
+            #     if grad is not None:
+            #         self.gradients[i] = (grad, var)
+            #         print(var)
+            # self.optimize= tf.train.AdamOptimizer(0.01).apply_gradients(self.gradients)
 
             if i == 0:
                 init_new_vars_op = tf.initialize_all_variables()
                 sess.run(init_new_vars_op)
             #self.x=self.step_ADAMS(grad_x,self.x) #step into gradient descent # looking into partial run s
-            loss, value_x, _= sess.run([loss, self.x, self.optimize],{self.s_0:init_state,self.s_f:final_state})
+            loss, value_x= sess.run([loss, self.x],{self.s_0:init_state,self.s_f:final_state})
             print(loss)            
 
         # input [num_actions, len_actions]--> [num_actions]---> [num_actions, len_actions]
