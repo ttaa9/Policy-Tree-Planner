@@ -138,7 +138,7 @@ class Henaff_Planning(Adam_Optimizer,):
             #self.optimize= tf.train.AdamOptimizer(0.01).minimize(loss)
             self.gradients = tf.gradients(loss, [self.x])
             print(self.gradients)
-            self.x = self.x - tf.multiply(self.gradients[0], 0.5) 
+            self.x = self.x - tf.multiply(self.gradients[0], 0.3) 
             # self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,['x:0'])
             # for i, (grad, var) in enumerate(self.gradients):
             #     if grad is not None:
@@ -183,7 +183,7 @@ def navmain():
     with tf.Graph().as_default(), tf.Session() as sess:
         init = tf.global_variables_initializer()
         sess.run(init)
-        hp = Henaff_Planning(7,10,64,10,0.1)#initialize hennaff planning method
+        hp = Henaff_Planning(10,10,64,20,0.1)#initialize hennaff planning method
         print(state_i,state_f)
         action_sequence=hp.optimize(state_i,state_f,env)
 
@@ -191,13 +191,15 @@ def navmain():
     action_sequence=np.argmax(action_sequence,1)
     action_sequence=np.reshape(action_sequence,[len(action_sequence),])
 
-    env.performAction(action_sequence[0])
-
-    env.display()
-
-    print('--')
-    print(env.actions[action_sequence[0]])
-    env.display()
+    for action in action_sequence:
+        print('\n')
+        print('-Initial State-')
+        env.display()
+        print('-Action Taken-')
+        env.performAction(action)
+        print(env.actions[action])
+        print('-Resultant State-')
+        env.display()
 
     pdb.set_trace()
     
