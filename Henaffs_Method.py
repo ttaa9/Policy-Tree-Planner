@@ -82,7 +82,7 @@ class Henaff_Planning(Adam_Optimizer,):
         self.fm=ForwardModel(64,74,10, 100)
         self.fm.load_model('abcd.ckpt')
 
-    def optimize(self,init_state,final_state):
+    def optimize(self,init_state,final_state,env):
         sess = tf.get_default_session()
         
         #TODO: Need to freeze graph -- https://blog.metaflow.fr/tensorflow-how-to-freeze-a-model-and-serve-it-with-a-python-api-d4f3596b3adc ????
@@ -118,7 +118,14 @@ class Henaff_Planning(Adam_Optimizer,):
                 state_out= tf.nn.rnn_cell.LSTMStateTuple(c, h)
         
             #TODO: is loss distance loss?? Do a custum loss function
-            loss = tf.reduce_mean(tf.square(current_state-self.s_f))
+            #loss = tf.reduce_mean(tf.square(current_state-self.s_f))
+            current_state=tf.reshape(current_state,[64,-1])
+            predVecs = env.deconcatenateOneHotStateVector(current_state)
+            labelVecs = env.deconcatenateOneHotStateVector(self.s_f)
+
+            for pv,lv in zip(predVecs,labelVecs):
+                loss = tf.nn.softmax_cross_entropy_with_logits(logits=tf.transpose(pv), labels=lv)
+
             #loss, _ = sess.run([loss,self.x],{self.s_0:init_state,self.s_f:final_state})
             
             #initialize the variables for the first iteration
@@ -131,7 +138,7 @@ class Henaff_Planning(Adam_Optimizer,):
             #self.optimize= tf.train.AdamOptimizer(0.01).minimize(loss)
             self.gradients = tf.gradients(loss, [self.x])
             print(self.gradients)
-            self.x = self.x - tf.multiply(self.gradients[0], 0.01) 
+            self.x = self.x - tf.multiply(self.gradients[0], 0.5) 
             # self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,['x:0'])
             # for i, (grad, var) in enumerate(self.gradients):
             #     if grad is not None:
@@ -176,9 +183,9 @@ def navmain():
     with tf.Graph().as_default(), tf.Session() as sess:
         init = tf.global_variables_initializer()
         sess.run(init)
-        hp = Henaff_Planning(10,10,64,30,0.1)#initialize hennaff planning method
+        hp = Henaff_Planning(7,10,64,10,0.1)#initialize hennaff planning method
         print(state_i,state_f)
-        action_sequence=hp.optimize(state_i,state_f)
+        action_sequence=hp.optimize(state_i,state_f,env)
 
     #convert action sequence to [num_action,] action numer ids
     action_sequence=np.argmax(action_sequence,1)
