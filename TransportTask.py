@@ -94,7 +94,7 @@ class TransportTask(SimpleGridTask):
     #   fal -> integer for agent location
     #   finalObjLocs -> list of integers
     # Output format: array of numObjects+1 concatenated one-hot vectors, each of length numLocations
-    def getStateRep(self):
+    def getStateRep(self,oneHotOutput=True):
         n,oh = self.numLocations, lambda i: self._intToOneHot(i,self.numLocations)
         g = [oh(loc) for loc in self.goalState[1]] + [oh(self.goalState[0])]
         a = [oh(loc) for loc in self.objectPositions] + [oh(self.agentLocation)]
