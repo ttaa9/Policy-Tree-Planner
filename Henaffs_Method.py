@@ -20,7 +20,6 @@ class Adam_Optimizer():
     
         self.beta1=beta1
         self.beta2=beta2
-        self.eps=eps
         self.lr_0=learning_rate_0
         self.lr=self.lr_0
 
@@ -63,7 +62,7 @@ class Henaff_Planning(Adam_Optimizer,):
         
 
         self.initialize_forward_model()
-        self.x= tf.Variable(tf.random_normal([num_actions,len_action]),name='x', dtype=tf.float32)
+        self.x= tf.Variable(tf.random_normal([num_actions,len_action])*0.1,name='x', dtype=tf.float32)
         self.s_0= tf.placeholder(tf.float32, [len_state])
         self.s_f= tf.placeholder(tf.float32, [len_state])
         self.iterations=iterations
@@ -71,8 +70,8 @@ class Henaff_Planning(Adam_Optimizer,):
         self.len_action = len_action
         self.len_state = len_state
         self.gamma=gamma
-        
-
+        self.lr_interval=[0.1,0.1]
+        self.eps=tf.constant(0.00001,shape=[self.num_actions,self.len_action])
 
         super().__init__(learning_rate_0=0.001,beta1=0.9,beta2=0.999,eps=1e-08,use_locking=False)
 
@@ -93,9 +92,13 @@ class Henaff_Planning(Adam_Optimizer,):
         #self.initialize_ADAMS() #initialized adams optimizer
 
         #self.x=tf.random_normal([self.num_actions,self.len_action]) # initialize self.x as normal distribrution of mean 0 and std 1
-      
+
+        self.initialize_ADAMS()
+
 
         for i in range(0,self.iterations):
+            lr=self.lr_interval[1]-i*((self.lr_interval[1]-self.lr_interval[0])/self.iterations)
+            print('learning rate: ',lr)
 
             epsilon=tf.random_normal([self.num_actions,self.len_action])*self.gamma
             self.x=self.x+epsilon
@@ -123,8 +126,10 @@ class Henaff_Planning(Adam_Optimizer,):
             predVecs = env.deconcatenateOneHotStateVector(current_state)
             labelVecs = env.deconcatenateOneHotStateVector(self.s_f)
 
+            
+            loss=0
             for pv,lv in zip(predVecs,labelVecs):
-                loss = tf.nn.softmax_cross_entropy_with_logits(logits=tf.transpose(pv), labels=lv)
+                loss += tf.nn.softmax_cross_entropy_with_logits(logits=tf.transpose(pv), labels=lv)
 
             #loss, _ = sess.run([loss,self.x],{self.s_0:init_state,self.s_f:final_state})
             
@@ -138,13 +143,25 @@ class Henaff_Planning(Adam_Optimizer,):
             #self.optimize= tf.train.AdamOptimizer(0.01).minimize(loss)
             self.gradients = tf.gradients(loss, [self.x])
             print(self.gradients)
-            self.x = self.x - tf.multiply(self.gradients[0], 0.3) 
-            # self.gradients= tf.train.AdamOptimizer(0.01).compute_gradients(loss,['x:0'])
-            # for i, (grad, var) in enumerate(self.gradients):
-            #     if grad is not None:
-            #         self.gradients[i] = (grad, var)
-            #         print(var)
-            # self.optimize= tf.train.AdamOptimizer(0.01).apply_gradients(self.gradients)
+
+            #self.x = self.x - tf.multiply(self.gradients[0], lr) 
+            
+            #Adams Optimizer
+
+            self.t=self.t+1
+            self.lr= self.lr*np.sqrt(1-np.power(self.beta2,self.t))/(1-np.power(self.beta1,self.t))
+            
+            if self.t==1: 
+                self.m=tf.multiply(1-self.beta1,self.gradients[0])
+                self.v=tf.multiply(1-self.beta2,tf.square(self.gradients[0]))
+
+            else:
+                self.m=tf.multiply(self.beta1,self.m)+tf.multiply(1-self.beta1,self.gradients[0])
+                self.v=tf.multiply(self.beta2,self.v)+tf.multiply(1-self.beta2,tf.square(self.gradients[0]))
+
+            self.x=self.x- self.lr*self.m/(tf.sqrt(self.v)+self.eps)
+
+
 
             if i == 0:
                 init_new_vars_op = tf.initialize_all_variables()
@@ -183,7 +200,7 @@ def navmain():
     with tf.Graph().as_default(), tf.Session() as sess:
         init = tf.global_variables_initializer()
         sess.run(init)
-        hp = Henaff_Planning(10,10,64,20,0.1)#initialize hennaff planning method
+        hp = Henaff_Planning(10,10,64,20,0.0000001)#initialize hennaff planning method
         print(state_i,state_f)
         action_sequence=hp.optimize(state_i,state_f,env)
 
