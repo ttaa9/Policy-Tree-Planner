@@ -206,7 +206,7 @@ def navmain():
         toSave = [env,data]
         import pickle, sys
 
-        with open("navigation-data-test-small.pickle",'wb') as outFile:
+        with open("navigation-data-train-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
 

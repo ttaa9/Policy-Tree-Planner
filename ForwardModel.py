@@ -2,10 +2,8 @@ from SimpleTask import SimpleGridTask
 import numpy as np, numpy.random as npr, random as r, SimpleTask
 from TransportTask import TransportTask
 from NavTask import NavigationTask
-import tensorflow as tf
-import os
-import time
-import pdb 
+import tensorflow as tf, os, time, pdb
+
 # Derived from: https://github.com/aymericdamien/TensorFlow-Examples/
 class SeqData():
     def __init__(self,dataFile):
