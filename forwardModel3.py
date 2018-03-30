@@ -82,20 +82,21 @@ class ForwardModel():
          
         self.saver = tf.train.Saver()
 
-    def dynamic_cell(self, x, seqlen, state_in):
-        outputs, states = tf.nn.dynamic_rnn(self.lstm_cell, x, dtype=tf.float32, sequence_length=seqlen, initial_state=state_in)
-        lstm_c, lstm_h = states
-        self.state_out = [lstm_c[:1, :], lstm_h[:1, :]]
+    def dynamic_cell(self, x, seqlen, state_in, reuse=None):
+        with tf.variable_scope("dynamic_cell", reuse=reuse):
+            outputs, states = tf.nn.dynamic_rnn(self.lstm_cell, x, dtype=tf.float32, sequence_length=seqlen, initial_state=state_in)
+            lstm_c, lstm_h = states
+            self.state_out = [lstm_c[:1, :], lstm_h[:1, :]]
+            
+            # Hack to build the indexing and retrieve the right output.
+            batch_size = tf.shape(outputs)[0]
+            # Start indices for each sample
+            index = tf.range(0, batch_size) * self.max_seq_len + (seqlen - 1)
+            # Indexing
+            outputs = tf.gather(tf.reshape(outputs, [-1, self.n_hidden]), index)
+            # Linear activation, using outputs computed above
         
-        # Hack to build the indexing and retrieve the right output.
-        batch_size = tf.shape(outputs)[0]
-        # Start indices for each sample
-        index = tf.range(0, batch_size) * self.max_seq_len + (seqlen - 1)
-        # Indexing
-        outputs = tf.gather(tf.reshape(outputs, [-1, self.n_hidden]), index)
-        # Linear activation, using outputs computed above
-      
-        return tf.matmul(outputs, self.weights['out']) + self.biases['out'], self.state_out
+            return tf.matmul(outputs, self.weights['out']) + self.biases['out'], self.state_out
     
     def get_initial_features(self, batch_size):
         # Call this function to get reseted lstm memory cells
