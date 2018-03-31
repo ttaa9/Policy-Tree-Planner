@@ -41,7 +41,6 @@ class SeqData():
         return batch_data, batch_labels, batch_seqlen
 
     def next_batch_nonseq(self,batch_size):
-
         batch_data = []
         while len(batch_data) < batch_size:
             rint = r.sample( range(0,self.datalen), 1 )[0]
@@ -51,8 +50,7 @@ class SeqData():
                 batch_data_index = r.sample(range(slen-1),1)[0]
                 stateActionIn = currData[ batch_data_index ]
                 stateOut = currData[ batch_data_index + 1 ][0:self.lenOfState]
-                batch_data.append( (stateActionIn,stateOut) )
-            
+                batch_data.append( [stateActionIn,stateOut] )
         return zip(*batch_data)
 
     def randomTrainingPair(self, padding=False):

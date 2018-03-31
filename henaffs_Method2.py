@@ -18,7 +18,7 @@ class Henaff_Planning():
         self.len_action = len_action
         self.len_state = len_state
         self.gamma=gamma
-        self.lr_interval=[0.5,0.5]
+        self.lr_interval=[0.001,0.001]
         self.eps=tf.constant(0.00001,shape=[self.num_actions,self.len_action])
         self.trainable_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, "x")
         
@@ -85,9 +85,8 @@ class Henaff_Planning():
 
         return value_x
 
-    def navmain():
 
-        
+def navmain():        
         env = NavigationTask() #(stochasticity=0.2)
         
 
@@ -103,7 +102,9 @@ class Henaff_Planning():
         
         #we want the goal state so replce the first position vector with the goal position vector
         with tf.Graph().as_default(), tf.Session() as sess:
-            hp = Henaff_Planning(10,10,64,20,0.0000001)#initialize hennaff planning method
+            numActions = 2
+            nIters = 100
+            hp = Henaff_Planning(numActions,10,64,nIters,0.0000001)#initialize hennaff planning method
             init = tf.variables_initializer(hp.trainable_vars)
             sess.run(init)
             print(state_i,state_f)

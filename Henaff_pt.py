@@ -225,7 +225,8 @@ def main():
     ####################################################
     training = False
     overwrite = False
-    runHenaff = True
+    runHenaff = False
+    testFM = True
     ####################################################
     f_model_name = 'forward-lstm-stochastic.pt'    
     s = 'navigation' # 'transport'
@@ -267,7 +268,43 @@ def main():
         planner = HenaffPlanner(f)
         print('Starting generation')
         planner.generatePlan(start,train.env,niters=150)
+    if testFM:
+        f.load_state_dict( torch.load(f_model_name) )
+        start = np.zeros(64)
+        start[0+2] = 1
+        start[15+3] = 1
+        start[15+15+0] = 1
+        start[15+15+4+5] = 1
+        start[15+15+4+15+5] = 1
+        action = np.zeros(10)
+        deconRes = train.env.deconcatenateOneHotStateVector(start)
+        print('Start state')
+        print('px',    np.argmax(deconRes[0]) )
+        print('py',    np.argmax(deconRes[1]) )
+        print('orien', np.argmax(deconRes[2]) )
+        print('gx',    np.argmax(deconRes[3]) )
+        print('gy',    np.argmax(deconRes[4]) )
+        action[5] = 1.0
+        stateAction = [torch.cat([(torch.FloatTensor(start)), (torch.FloatTensor(action))])]
+        #print('SA:',stateAction)
+        #print('Start State')
+        #printState( stateAction[0][0:-10], train.env )
+        print('Action',NavigationTask.actions[np.argmax( action )])
+        f.reInitialize()
+        seq = avar(torch.cat(stateAction).view(len(stateAction), 1, -1)) # [seqlen x batchlen x hidden_size]
+        result = f.forward(seq)
+        print('PredState')
+        printState( result, train.env )
+        #deconRes = train.env.deconcatenateOneHotStateVector(result)
+        
 
+def printState(s,env): 
+        deconRes = env.deconcatenateOneHotStateVector(s)
+        print('px',    np.argmax(deconRes[0].data.numpy()) )
+        print('py',    np.argmax(deconRes[1].data.numpy()) )
+        print('orien', np.argmax(deconRes[2].data.numpy()) )
+        print('gx',    np.argmax(deconRes[3].data.numpy()) )
+        print('gy',    np.argmax(deconRes[4].data.numpy()) )
 
 if __name__ == '__main__':
     main()

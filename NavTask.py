@@ -165,11 +165,12 @@ class NavigationTask(SimpleGridTask):
             # Generate env with random placement
             p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
             start_pos = [p_0, r.choice(NavigationTask.oriens)]
-            cenv = NavigationTask(width=width,height=height,agent_start_pos=start_pos,goal_pos=None,
-                track_history=True,stochasticity=noise_level,maxSteps=max_num_steps)
+            goal_pos = [ npr.randint(0,width), npr.randint(0,height) ]
+            cenv = NavigationTask(width=width, height=height, agent_start_pos=start_pos, goal_pos=goal_pos,
+                track_history=True, stochasticity=noise_level, maxSteps=max_num_steps)
             # Choose random number of actions to run in [1,max_steps]
             num_acs_to_run = npr.randint(1,max_num_steps)
-            if verbose and traj % print_every == 0: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run)
+            if verbose and traj % print_every == 0: print("\tStart:",str(start_pos)+", N_a:",num_acs_to_run,", GP:",goal_pos)
             for ac in range(0,num_acs_to_run):
                 # Change direction vs move
                 changeDir = r.random() >= 0.5
@@ -206,7 +207,7 @@ def navmain():
         toSave = [env,data]
         import pickle, sys
 
-        with open("navigation-data-train-small.pickle",'wb') as outFile:
+        with open("navigation-data-test-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
 
