@@ -1,6 +1,6 @@
 import numpy as np, numpy.random as npr, random as r, copy
 from SimpleTask import SimpleGridTask
-import pickle
+import pickle, os, sys
 class NavigationTask(SimpleGridTask):
     '''
     Implementation of a simple navigation task on a 2D discrete grid.
@@ -184,6 +184,40 @@ class NavigationTask(SimpleGridTask):
             trajs.append( cenv.getHistoryAsTupleArray() )
         return trajs
 
+
+    def generateSingleStepData(numDataPoints=500000,width=15,height=15,dataPointsPerEnv=10,stochasticity=0.0):
+        # Setup
+        numEnvs = numDataPoints // dataPointsPerEnv
+        if numEnvs * dataPointsPerEnv != numDataPoints:
+            print('Please input a numDataPoints divisible by dataPointsPerEnv')
+            sys.exit(0)
+        data_x, data_y = [], []
+        numActions = len(NavigationTask.actions)
+        # Data generation
+        for ne in range(numEnvs):
+            # Create a new environment
+            p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
+            start_pos = [p_0, r.choice(NavigationTask.oriens)]
+            goal_pos = np.array([ npr.randint(0,width), npr.randint(0,height) ])
+            cenv = NavigationTask(width=width, height=height, agent_start_pos=start_pos, goal_pos=goal_pos,
+                track_history=True, stochasticity=stochasticity, maxSteps=dataPointsPerEnv)
+            # Take several actions, reocording the result each time
+            for ai in range(dataPointsPerEnv):
+                initialState = cenv.getStateRep(oneHotOutput=True)
+                action = npr.randint(0,numActions)
+                cenv.performAction(action)
+                currentState = cenv.getStateRep(oneHotOutput=True)
+                oha = cenv._intToOneHot(action,numActions)
+                x_input = np.concatenate( (initialState,oha) )
+                y_label = currentState
+                data_x.append( x_input )
+                data_y.append( y_label )
+        # Shuffle the resulting data
+        combined = list(zip(data_x,data_y))
+        r.shuffle(combined)
+        data_x, data_y = zip(*combined)
+        return [np.array(data_x), np.array(data_y)]
+
 ######################################################################################################
 
 ### Testing ###
@@ -202,16 +236,24 @@ def navmain():
         print(thist[0:5])
         print('--')
         data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
-    if True:
+    if False:
         data = NavigationTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
         toSave = [env,data]
-        import pickle, sys
-
         with open("navigation-data-test-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
-
-
+    if True:
+        print('Generating Training Data')
+        train = NavigationTask.generateSingleStepData()
+        print('Generating Testing Data')
+        test = NavigationTask.generateSingleStepData()
+        with open("navigation-data-train-single-small.pickle",'wb') as outFile:
+            print('Saving'); pickle.dump(train,outFile)
+        with open("navigation-data-test-single-small.pickle",'wb') as outFile:
+            print('Saving'); pickle.dump(test,outFile)
 
 if __name__ == '__main__':
     navmain()
+
+
+
