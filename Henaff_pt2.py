@@ -26,7 +26,7 @@ class ForwardModelFFANN(nn.Module):
 
     def forward(self, inputValue):
         output = F.relu( self.layer1(inputValue) )
-        output = F.sigmoid( self.layer2(output) ) # F.sigmoid
+        output = F.relu( self.layer2(output) ) # F.sigmoid
         output = self.layer3(output) 
         
         #output1 = avar(torch.FloatTensor(output.shape), requires_grad=True)
@@ -44,34 +44,64 @@ class ForwardModelFFANN(nn.Module):
 
         return torch.cat( ( v1,v2,v3,v4,v5 ), dim=1 ) #output1 #self._statewiseSoftmax( output )
 
-    def train(self,trainSet,validSet,minibatch_size=100,maxIters=10000,testEvery=200,noiseSigma=0.2):
-        optimizer = optim.Adam(self.parameters(), lr = 0.000002 * minibatch_size)
+    def noisify(self,data,noiseSigma,wantAdditionalActionNoise=True):
+        ds = data.shape
+        output = np.zeros(ds)
+        def softmax(x):
+            e_x = np.exp(x - np.max(x))
+            return e_x / e_x.sum()
+        for i in range(ds[0]): 
+            currIn = data[i,:]
+            # Original action index
+            ind_a = np.argmax(currIn[-10:])
+            # Add noise to the state and action
+            currIn = currIn + npr.randn(ds[1])*noiseSigma
+            currIn[0:15]  = softmax(currIn[0:15])
+            currIn[15:30] = softmax(currIn[15:30])
+            currIn[30:34] = softmax(currIn[30:34])
+            currIn[34:49] = softmax(currIn[34:49])
+            currIn[49:64] = softmax(currIn[49:64])
+            # Softmax the action part (since that will happen in Henaff)
+            # Additional action noise that preserves maximal action
+            if wantAdditionalActionNoise:
+                newval = npr.uniform(0.01, 0.09999, 10) # in [0.02,0.1]
+                offset = npr.uniform(0.01, 0.05, 1) # max in ~~~[0.11,0.15]
+                currIn[-10:] = newval
+                ind_a_new = np.argmax(currIn[-10:])
+                currIn[ 64 + ind_a ] = np.max(newval) + offset
+                #print(data[i,-10:])
+                
+#                secondSigma = 0.1
+#                currIn[-10:] = currIn[-10:] + secondSigma*npr.randn(10)
+#                ind_a_new = np.argmax(currIn[-10:])
+#                if ind_a != ind_a_new:
+#                if currIn[ ind_a + 64 ] < currIn[ ind_a_new + 64 ]
+            a = softmax( currIn[-10:] )
+            #print(currIn[-10:])
+            #sys.exit(0)
+            currIn[-10:] = a
+            #if npr.uniform() > 0.99999: print(i,'->','Out:', list(zip(currIn, data[i,:])))
+            output[i,:] = currIn
+        return output
+
+    def train(self,trainSet,validSet,minibatch_size=200,maxIters=30000,testEvery=250,noiseSigma=0.2,
+            noisyDataSetTxLoc=None,f_model_name=None):
+        optimizer = optim.Adam(self.parameters(), lr = 0.0000025 * minibatch_size)
         lossf = nn.MSELoss() # nn.L1Loss() # nn.MSELoss() 
         train_x, train_y = trainSet 
         np.set_printoptions(precision=3)
-        def noisify(data):
-            ds = data.shape
-            output = np.zeros(ds)
-            def softmax(x):
-                e_x = np.exp(x - np.max(x))
-                return e_x / e_x.sum()
-            for i in range(ds[0]):
-                currIn = data[i,:]
-                # Add noise to the state and action
-                currIn = currIn + npr.randn(ds[1])*noiseSigma
-                currIn[0:15]  = softmax(currIn[0:15])
-                currIn[15:30] = softmax(currIn[15:30])
-                currIn[30:34] = softmax(currIn[30:34])
-                currIn[34:49] = softmax(currIn[34:49])
-                currIn[49:64] = softmax(currIn[49:64])
-                # Softmax the action part (since that will happen in Henaff)
-                a = softmax( currIn[-10:] )
-                currIn[-10:] = a
-                #if npr.uniform() > 0.99999: print(i,'->','Out:', list(zip(currIn, data[i,:])))
-                output[i,:] = currIn
-            return output
-        print('Noisifying Data')
-        train_x_noisy = noisify(train_x)
+        
+        if not noisyDataSetTxLoc is None and os.path.exists(noisyDataSetTxLoc):
+            print('Loading noised data (Note this ignores any changes to sigma)')
+            with open(noisyDataSetTxLoc,'rb') as fff:
+                train_x_noisy = pickle.load(fff)
+        else:
+            print('Noisifying data')
+            train_x_noisy = self.noisify(train_x,noiseSigma)
+            if not noisyDataSetTxLoc is None:
+                print('Saving noised data to',noisyDataSetTxLoc)
+                with open(noisyDataSetTxLoc,'wb') as fff:
+                    pickle.dump(train_x_noisy, fff)
         np.set_printoptions()
         train_x = avar( torch.FloatTensor(train_x), requires_grad=False)
         train_x_noisy = avar( torch.FloatTensor(train_x_noisy), requires_grad=False)
@@ -85,7 +115,7 @@ class ForwardModelFFANN(nn.Module):
             return dsx[choices], dsy[choices]
         print('Starting training')
         switchTime = 0
-        noiselessProb = 0.05
+        noiselessProb = 0.1
         for i in range(0,maxIters):
             self.zero_grad()
             if i == switchTime: print('Changing to noisy dataset')
@@ -102,18 +132,31 @@ class ForwardModelFFANN(nn.Module):
                 lossv = lossf(predv, vy)
                 print('L_v =','%.4f' % lossv.data[0],end=', ')
                 acc = self._accuracyBatch(vy,predv)
-                print("VACC =",'%.4f' % acc)
+                print("VACC (noiseless) =",'%.4f' % acc,end=', ')
+
+                tx, ty = getRandomMiniBatch(train_x_noisy,train_y,2000,ntrain)
+                predt = self.forward(tx)
+                acctn = self._accuracyBatch(ty,predt)
+                print("TACC (noisy) =",'%.4f' % acctn)
+
+                if not f_model_name is None:
+                    torch.save(self.state_dict(), f_model_name)
+
+    def largeTest(self,datafile,additionalNoiseSigma=0.3):
+        pass
 
     def test(self,x,y=None):
         if not type(x) is avar:
             x = avar( torch.FloatTensor(x) )
+            if len(x.shape) <= 1:
+                x = torch.unsqueeze(x,0)
         print('Input State')
-        s_0 = x[0:-10]
+        s_0 = x[0,0:-10]
         self.printState(s_0,'\t')
         print('Input Action')
-        self.printAction(x[-10:],'\t')
+        self.printAction(x[0,-10:],'\t')
         print('Predicted Final State')
-        yhat = self.forward(x)
+        yhat = self.forward(x)[0,:]
         self.printState( yhat, '\t' )
         if not y is None:
             if not type(y) is avar:
@@ -174,6 +217,7 @@ class ForwardModelFFANN(nn.Module):
             varr.append(vs)
         return torch.cat(varr)
 
+########################################################################################################
 
 class ForwardModelLSTM(nn.Module):
     ''' Currently has a bug. Probably. '''
@@ -282,7 +326,7 @@ class ForwardModelLSTM(nn.Module):
 
 class HenaffPlanner():
 
-    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.005,startNoiseSigma=0.1,niters=200):
+    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.2,startNoiseSigma=0.1,niters=200):
         # Parameters
         self.sigma = noiseSigma
         self.start_sigma = startNoiseSigma
@@ -295,7 +339,7 @@ class HenaffPlanner():
         self.state_size = self.f.stateSize
         self.action_size = self.f.inputSize - self.f.stateSize
 
-    def generatePlan(self,start_state,eta=0.00002,niters=None,goal_state=None,useCE=False):
+    def generatePlan(self,start_state,eta=0.1,niters=None,goal_state=None,useCE=True):
         x_t = avar( torch.randn(self.nacts, self.action_size) * self.start_sigma, requires_grad=True )
         deconStartState = self.f.env.deconcatenateOneHotStateVector(start_state)
         if useCE:
@@ -322,10 +366,16 @@ class HenaffPlanner():
                 action = a_t[k,:]
                 #currState = self.f.stateSoftmax(currState)
                 currInput = torch.cat([currState,action], 0)
+                currInput = torch.unsqueeze(currInput,0)
+                self.f.printState(currInput[0,0:64])
+                self.f.printAction(currInput[0,-10:])
                 currState = self.f.forward( currInput )
+                self.f.printState(currState[0])
+                print('--')
+                #sys.exit(0)
                 # currInput = currInput.view(1, 1, -1) # [seqlen x batchlen x feat_size]
             # Compute loss
-            predFinal = self.f.env.deconcatenateOneHotStateVector( self.f.stateSoftmax(currState) )
+            predFinal = self.f.env.deconcatenateOneHotStateVector( self.f.stateSoftmax(currState[0]) )
             pvx = predFinal[0]
             pvy = predFinal[1]
             #
@@ -335,7 +385,14 @@ class HenaffPlanner():
             else:
                 lossx = lossf(pvx, gx)
                 lossy = lossf(pvy, gy)
-            loss = lossx + lossy
+            # Entropy penalty
+            H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
+            lambda_H = 0.1
+            print('Entropy',H)
+            #for i in range(0,self.nacts):
+            #    H += a_t
+            # Loss function
+            loss = lossx + lossy + lambda_H * H
             #
             print(i, '-> L =', lossx.data[0],' + ',lossy.data[0])
             # print(indx.data[0],indy.data[0],end='  ###  ')
@@ -352,7 +409,7 @@ class HenaffPlanner():
 #        print(F.softmax( x_t, dim=1 ))
         print('Actions')
         for k in range(0,self.nacts):
-            action = x_t[k,:]
+            action = F.softmax( x_t[k,:], dim=0 )
             print(action.max(0)[1].data[0],end=' -> ')
             print(NavigationTask.actions[action.max(0)[1].data[0]],end=' ')
             print(action.data)
@@ -418,7 +475,12 @@ class HenaffPlanner():
         print('TARGET END ',indx.data[0],indy.data[0])
         print('--')
 
-
+# trained on 0.1 sigma
+# intermixed non-noisy data
+# Reached 99.7%
+# Next trained on 0.2 sigma
+# Get 1.0 on noiseless, 0.99 on noisy
+# Trained more on set with additional action noise
 
 ########################################################################################################
 ########################################################################################################
@@ -430,27 +492,40 @@ def main():
     testFM = False
     ###
     useFFANN = True
-    trainingFFANN = True
+    trainingFFANN = False
     manualTest = False
-    runHenaffFFANN = False
+    autoTest = False
+    runHenaffFFANN = True
     ####################################################
     if useFFANN:
-        f_model_name = 'forward-ffann-noisy.pt'
+        f_model_name = 'forward-ffann-noisy-wan-1.pt' # 6 gets 99% on 0.1% noise
         exampleEnv = NavigationTask()
         f = ForwardModelFFANN(exampleEnv)
+
         if trainingFFANN:
+            ############
             ts = "navigation-data-train-single-small.pickle"
             vs = "navigation-data-test-single-small.pickle"
+            tsx_noisy = "noisier-actNoise-navigation-data-single.pickle"
+            preload_name = f_model_name
+            saveName = 'forward-ffann-noisy-wan-2.pt'
+            ############
             print('Reading Data')
             with open(ts,'rb') as inFile:
                 print('\tReading',ts); trainSet = pickle.load(inFile)
             with open(vs,'rb') as inFile:
                 print('\tReading',vs); validSet = pickle.load(inFile)
-            
-            f.train(trainSet,validSet)
-            print('Saving to',f_model_name)
-            torch.save(f.state_dict(), f_model_name)
+            if not preload_name is None:
+                print('Loading from',f_model_name)
+                f.load_state_dict( torch.load(f_model_name) )
+            f.train(trainSet,validSet,noisyDataSetTxLoc=tsx_noisy,f_model_name=saveName)
+            print('Saving to',saveName)
+            torch.save(f.state_dict(), saveName)
+
         elif manualTest:
+            ###
+            f_model_name = 'forward-ffann-noisy6.pt'
+            ###
             f.load_state_dict( torch.load(f_model_name) )
             start = np.zeros(74, dtype=np.float32)
             start[0+4] = 1
@@ -459,9 +534,7 @@ def main():
             start[15+15+4+8] = 1
             start[15+15+4+15+7] = 1
             start[15+15+4+15+15+4] = 1.0
-
             f.test(start)
-
             for i in range(10):
                 width, height = 15, 15
                 p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
@@ -471,14 +544,22 @@ def main():
                     width=width, height=height, agent_start_pos=start_pos, goal_pos=goal_pos,
                     track_history=True, stochasticity=0.0, maxSteps=10)
                 s_0 = checkEnv.getStateRep()
-                a = np.zeros(10)
-                a[ npr.randint(0,10) ] = 1
-                inval = np.concatenate( (s_0,a) )
-                checkEnv.performAction(np.argmax(a))
+                a1, a2 = np.zeros(10), np.zeros(10)
+                a1[ npr.randint(0,10) ] = 1
+                a2[ npr.randint(0,10) ] = 1
+
+                checkEnv.performAction(np.argmax(a1))
                 s_1 = checkEnv.getStateRep()
-                f.test(inval,s_1)
+
+                inval = np.concatenate( (s_0,a1) )
+                outval1 = f.test(inval,s_1)
                 print('----')
-        elif runHenaffFFANN:
+        if autoTest:
+            print('Loading from',f_model_name)
+            f.load_state_dict( torch.load(f_model_name) )
+
+
+        if runHenaffFFANN:
             print('Loading from',f_model_name)
             f.load_state_dict( torch.load(f_model_name) )
             start = np.zeros(64)
@@ -492,7 +573,7 @@ def main():
             print('Building planner')
             planner = HenaffPlanner(f,maxNumActions=1)
             print('Starting generation')
-            planner.generatePlan(start,niters=150)
+            planner.generatePlan(start,niters=500)
 
     else:
         f_model_name = 'forward-lstm-stochastic.pt'    

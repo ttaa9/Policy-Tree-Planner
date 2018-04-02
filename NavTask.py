@@ -185,7 +185,7 @@ class NavigationTask(SimpleGridTask):
         return trajs
 
 
-    def generateSingleStepData(numDataPoints=500000,width=15,height=15,dataPointsPerEnv=10,stochasticity=0.0):
+    def generateSingleStepData(numDataPoints=1000000,width=15,height=15,dataPointsPerEnv=20,stochasticity=0.0):
         # Setup
         numEnvs = numDataPoints // dataPointsPerEnv
         if numEnvs * dataPointsPerEnv != numDataPoints:
@@ -195,6 +195,7 @@ class NavigationTask(SimpleGridTask):
         numActions = len(NavigationTask.actions)
         # Data generation
         for ne in range(numEnvs):
+            if ne == numEnvs // 2: print('\tHalf-done')
             # Create a new environment
             p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
             start_pos = [p_0, r.choice(NavigationTask.oriens)]
