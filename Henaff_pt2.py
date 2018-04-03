@@ -2,7 +2,7 @@ import torch, torch.autograd as autograd
 import torch.nn as nn, torch.nn.functional as F
 import torch.optim as optim
 from torch.autograd import Variable as avar
-
+    
 from SimpleTask import SimpleGridTask
 from TransportTask import TransportTask
 from NavTask import NavigationTask
@@ -165,7 +165,7 @@ class ForwardModelFFANN(nn.Module):
             self.printState(y,'\t')
             print('Acc: ', self._accuracySingle(y, yhat))
 
-    def printState(self,s,pre='',p=2): 
+    def printState(self,s,pre='',p=4): 
         deconRes = self.env.deconcatenateOneHotStateVector(s)
         tt = lambda x: deconRes[x].data.numpy()
         np.set_printoptions(precision=p)
@@ -179,7 +179,10 @@ class ForwardModelFFANN(nn.Module):
         np.set_printoptions()
 
     def printAction(self,a,pre=''):
-        ind = np.argmax(a.data.numpy())
+        if type(a) is avar:
+            ind = np.argmax(a.data.numpy())
+        else:
+            ind = np.argmax(a)
         print(str(pre)+'a:',self.env.actions[ind],'('+str(ind)+')')
 
     def _accuracyBatch(self,ylist,yhatlist):
@@ -326,7 +329,7 @@ class ForwardModelLSTM(nn.Module):
 
 class HenaffPlanner():
 
-    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.2,startNoiseSigma=0.1,niters=200):
+    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.25,startNoiseSigma=0.1,niters=200):
         # Parameters
         self.sigma = noiseSigma
         self.start_sigma = startNoiseSigma
@@ -339,8 +342,9 @@ class HenaffPlanner():
         self.state_size = self.f.stateSize
         self.action_size = self.f.inputSize - self.f.stateSize
 
-    def generatePlan(self,start_state,eta=0.1,niters=None,goal_state=None,useCE=True):
+    def generatePlan(self,start_state,eta=0.5,niters=None,goal_state=None,useCE=True,extraVerbose=False):
         x_t = avar( torch.randn(self.nacts, self.action_size) * self.start_sigma, requires_grad=True )
+        optimizer = torch.optim.Adam( [x_t], lr=eta )
         deconStartState = self.f.env.deconcatenateOneHotStateVector(start_state)
         if useCE:
             lossf = nn.CrossEntropyLoss()
@@ -358,51 +362,90 @@ class HenaffPlanner():
         for i in range(niters):
             # Generate soft action sequence
             epsilon = avar( torch.randn(self.nacts, self.action_size) * self.sigma )
+            #print('--')
+            #print('x_t',x_t.data)
             y_t = x_t + epsilon
             a_t = F.softmax( y_t, dim=1 )
             # Compute predicted state
-            currState = avar(torch.FloatTensor(start_state))
+            currState = avar(torch.FloatTensor(start_state)).unsqueeze(0)
             for k in range(0,self.nacts):
                 action = a_t[k,:]
+                #### Apply Gumbel Softmax ####
+                temperature = 0.01
+                logProbAction = torch.log( action ) 
+                action = gumbel_softmax(logProbAction, temperature)
+                ##############################
                 #currState = self.f.stateSoftmax(currState)
-                currInput = torch.cat([currState,action], 0)
+                #print(currState.shape)
+                #print(action.shape)
+                currInput = torch.cat([currState[0],action], 0)
                 currInput = torch.unsqueeze(currInput,0)
-                self.f.printState(currInput[0,0:64])
-                self.f.printAction(currInput[0,-10:])
                 currState = self.f.forward( currInput )
-                self.f.printState(currState[0])
-                print('--')
+
+                if extraVerbose:
+                    print('Action:',k)
+                    self.f.printState(currInput[0,0:64])
+                    self.f.printAction(currInput[0,-10:])
+                    self.f.printState(currState[0])
+                    print('--')
                 #sys.exit(0)
                 # currInput = currInput.view(1, 1, -1) # [seqlen x batchlen x feat_size]
             # Compute loss
-            predFinal = self.f.env.deconcatenateOneHotStateVector( self.f.stateSoftmax(currState[0]) )
-            pvx = predFinal[0]
-            pvy = predFinal[1]
+           
+            #print('CSx',currState[0,0:15])
+            #print('CSy',currState[0,15:30])
+            #v1 = F.softmax(currState[0,0:15],dim=0)
+            #print('v1',v1)
+            #v2 = F.softmax(currState[0,15:30],dim=0)
+            #print('v2',v2)
+            #v3 = F.softmax(currState[0,30:34],dim=0)
+            #v4 = F.softmax(currState[0,34:49],dim=0)
+            #v5 = F.softmax(currState[0,49:64],dim=0)
+
+            #pred = torch.cat( ( v1,v2,v3,v4,v5 ), dim=0 ) #output1 #self._statewiseSoftmax( output )
+            pvx = currState[0,0:15] #v1 action already softmaxed
+            pvy = currState[0,15:30] #v2
+            #predFinal = self.f.env.deconcatenateOneHotStateVector( self.f.stateSoftmax(currState[0]) )
+            #pvx = predFinal[0]
+            #pvy = predFinal[1]
             #
             if useCE:
                 lossx = lossf(pvx.view(1,len(pvx)), indx) 
                 lossy = lossf(pvy.view(1,len(pvy)), indy)
             else:
+                print('--')
+                print('pvx',pvx.data.numpy())
+                print('gx',gx.data.numpy())
+                print('pvy',pvy.data.numpy())
+                print('gy',gy.data.numpy())
                 lossx = lossf(pvx, gx)
                 lossy = lossf(pvy, gy)
             # Entropy penalty
             H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
-            lambda_H = 0.1
-            print('Entropy',H)
+            lambda_H = -0.01
+            # print('Entropy',H)
             #for i in range(0,self.nacts):
             #    H += a_t
             # Loss function
             loss = lossx + lossy + lambda_H * H
+            verbose = True
+            if verbose:
+                a_inds = ",".join([ str(a.max(dim=0)[1].data[0]) for a in a_t  ]) 
+                print(i,'->','Lx =',lossx.data[0],', Ly =',lossy.data[0],', H =',H.data[0],', A =',a_inds)
             #
-            print(i, '-> L =', lossx.data[0],' + ',lossy.data[0])
+            if extraVerbose:
+                print(i, '-> L =', lossx.data[0],' + ',lossy.data[0])
             # print(indx.data[0],indy.data[0],end='  ###  ')
             # print( pvx.max(0)[1].data[0], pvy.max(0)[1].data[0] )
             # print('--')
+            optimizer.zero_grad()
             loss.backward()
-            x_t.data -= eta * x_t.grad.data
+            optimizer.step()
+            #x_t.data -= eta * x_t.grad.data
             # print('g_t',x_t.grad.data)
             # print('x_t',x_t.data)
-            print('Predicted End:',pvx.max(0)[1].data[0],pvy.max(0)[1].data[0])
+            if extraVerbose:
+                print('Predicted End:',pvx.max(0)[1].data[0],pvy.max(0)[1].data[0])
             x_t.grad.data.zero_()
 
         print('\nEnd\n')
@@ -493,9 +536,9 @@ def main():
     ###
     useFFANN = True
     trainingFFANN = False
-    manualTest = False
+    manualTest = True
     autoTest = False
-    runHenaffFFANN = True
+    runHenaffFFANN = False #True
     ####################################################
     if useFFANN:
         f_model_name = 'forward-ffann-noisy-wan-1.pt' # 6 gets 99% on 0.1% noise
@@ -523,8 +566,11 @@ def main():
             torch.save(f.state_dict(), saveName)
 
         elif manualTest:
+            def softmax(x):
+                e_x = np.exp(x - np.max(x))
+                return e_x / e_x.sum()
             ###
-            f_model_name = 'forward-ffann-noisy6.pt'
+            #f_model_name = 'forward-ffann-noisy6.pt'
             ###
             f.load_state_dict( torch.load(f_model_name) )
             start = np.zeros(74, dtype=np.float32)
@@ -535,7 +581,8 @@ def main():
             start[15+15+4+15+7] = 1
             start[15+15+4+15+15+4] = 1.0
             f.test(start)
-            for i in range(10):
+            print('-----\n','Starting manualTest loop')
+            for i in range(5):
                 width, height = 15, 15
                 p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
                 start_pos = [p_0, r.choice(NavigationTask.oriens)]
@@ -544,16 +591,53 @@ def main():
                     width=width, height=height, agent_start_pos=start_pos, goal_pos=goal_pos,
                     track_history=True, stochasticity=0.0, maxSteps=10)
                 s_0 = checkEnv.getStateRep()
-                a1, a2 = np.zeros(10), np.zeros(10)
-                a1[ npr.randint(0,10) ] = 1
-                a2[ npr.randint(0,10) ] = 1
-
-                checkEnv.performAction(np.argmax(a1))
+                #a1, a2 = np.zeros(10), np.zeros(10)
+                #a1[ npr.randint(0,10) ] = 1
+                #a2[ npr.randint(0,10) ] = 1
+                numActions = 3
+                currState = avar( torch.FloatTensor(s_0).unsqueeze(0) )
+                print('Start State')
+                f.printState( currState[0] )
+                actionSet = []
+                for j in range(numActions):
+                    action = np.zeros( 10 )
+                    action[ npr.randint(0,10) ] = 1
+                    action += npr.randn( 10 )*0.1
+                    action = softmax( action )
+                    print('\tSoft Noisy Action ',j,'=',action)
+                    #### Apply Gumbel Softmax ####
+                    temperature = 0.001
+                    logProbAction = torch.log( avar(torch.FloatTensor(action)) ) 
+                    actiong = gumbel_softmax(logProbAction, temperature)
+                    ##############################
+                    print('\tGumbel Action ',j,'=',actiong.data.numpy())
+                    actionSet.append( actiong )
+                    checkEnv.performAction( np.argmax(action) )
+                    a = actiong  # avar( torch.FloatTensor(actiong) )
+                    currState = f.forward( torch.cat([currState[0],a]).unsqueeze(0) )
+                    print("Intermediate State",j)
+                    f.printState( currState[0] )
+                #checkEnv.performAction(np.argmax(a1))
+                #checkEnv.performAction(np.argmax(a2))
                 s_1 = checkEnv.getStateRep()
-
-                inval = np.concatenate( (s_0,a1) )
-                outval1 = f.test(inval,s_1)
-                print('----')
+                #inval = np.concatenate( (s_0,a1) )
+                #outval1 = f.forward( avar(torch.FloatTensor(inval).unsqueeze(0)) )
+                #print(outval1.shape)
+                #print(a2.shape)
+                #inval2 = np.concatenate( (outval1[0].data.numpy(),a2) )
+                #outval2 = f.forward( avar(torch.FloatTensor(inval2).unsqueeze(0)) )
+                for action in actionSet:
+                    f.printAction(action)
+                print('Predicted')
+                f.printState( currState[0] )
+                print('Actual')
+                s1 = avar( torch.FloatTensor( s_1 ).unsqueeze(0) )
+                f.printState( s1[0] ) 
+                print("Rough accuracy", torch.sum( (currState - s1).pow(2) ).data[0] )
+                #print('Predicted',currState.data[0].numpy())
+                #print('Actual',s_1)
+                #outval1 = f.test(inval,s_1)
+                print('----\n')
         if autoTest:
             print('Loading from',f_model_name)
             f.load_state_dict( torch.load(f_model_name) )
@@ -567,13 +651,13 @@ def main():
             start[15] = 1
             start[15+15] = 1
             start[15+15+4+0] = 1
-            start[15+15+4+15+2] = 1
+            start[15+15+4+15+6] = 1
             print(f.env.deconcatenateOneHotStateVector(start))
             #sys.exit(0)
             print('Building planner')
-            planner = HenaffPlanner(f,maxNumActions=1)
+            planner = HenaffPlanner(f,maxNumActions=3)
             print('Starting generation')
-            planner.generatePlan(start,niters=500)
+            planner.generatePlan(start,niters=200,extraVerbose=True)
 
     else:
         f_model_name = 'forward-lstm-stochastic.pt'    
@@ -644,7 +728,27 @@ def main():
             print('PredState')
             printState( result, train.env )
             #deconRes = train.env.deconcatenateOneHotStateVector(result)
-        
+
+def sample_gumbel(shape, eps=1e-20):
+    U = torch.rand(shape) #.cuda()
+    return -avar(torch.log(-torch.log(U + eps) + eps))
+
+def gumbel_softmax_sample(logits, temperature):
+    y = logits + sample_gumbel(logits.size())
+    return F.softmax(y / temperature, dim=-1)
+
+def gumbel_softmax(logits, temperature):
+    """
+    input: [*, n_class]
+    return: [*, n_class] an one-hot vector
+    """
+    y = gumbel_softmax_sample(logits, temperature)
+    shape = y.size()
+    _, ind = y.max(dim=-1)
+    y_hard = torch.zeros_like(y).view(-1, shape[-1])
+    y_hard.scatter_(1, ind.view(-1, 1), 1)
+    y_hard = y_hard.view(*shape)
+    return (y_hard - y).detach() + y
 
 def printState(s,env): 
         deconRes = env.deconcatenateOneHotStateVector(s)
