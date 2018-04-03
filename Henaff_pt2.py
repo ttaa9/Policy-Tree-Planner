@@ -329,7 +329,7 @@ class ForwardModelLSTM(nn.Module):
 
 class HenaffPlanner():
 
-    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.1,startNoiseSigma=0.1,niters=200):
+    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.0,startNoiseSigma=0.1,niters=200):
         # Parameters
         self.sigma = noiseSigma
         self.start_sigma = startNoiseSigma
@@ -342,10 +342,11 @@ class HenaffPlanner():
         self.state_size = self.f.stateSize
         self.action_size = self.f.inputSize - self.f.stateSize
 
-    def generatePlan(self,start_state,eta=0.00003,niters=None,goal_state=None,useCE=False,extraVerbose=False):
+    def generatePlan(self,start_state,eta=0.03,niters=None,goal_state=None,useCE=False,extraVerbose=False):
         x_t = avar( torch.randn(self.nacts, self.action_size) * self.start_sigma, requires_grad=True )
         optimizer = torch.optim.Adam( [x_t], lr=eta )
         deconStartState = self.f.env.deconcatenateOneHotStateVector(start_state)
+        useIntDistance = True
         if useCE:
             lossf = nn.CrossEntropyLoss()
         else:
@@ -373,7 +374,7 @@ class HenaffPlanner():
                 #### Apply Gumbel Softmax ####
                 temperature = 0.01
                 logProbAction = torch.log( action ) 
-                #action = gumbel_softmax(logProbAction, temperature)
+                action = gumbel_softmax(logProbAction, temperature)
                 ##############################
                 #currState = self.f.stateSoftmax(currState)
                 #print(currState.shape)
@@ -429,6 +430,19 @@ class HenaffPlanner():
             if useCE:
                 lossx = lossf(pvx.view(1,pvx.shape[0]), indx) 
                 lossy = lossf(pvy.view(1,pvy.shape[0]), indy)
+            elif useIntDistance:
+                ints = avar( torch.FloatTensor( list(range(15)) ) )
+                prx = torch.sum( ints * pvx )
+                pry = torch.sum( ints * pvy )
+                lossx = (1.0/15.0) * (prx - indx.data[0]).pow(2)
+                lossy = (1.0/15.0) * (pry - indy.data[0]).pow(2) #avar(torch.FloatTensor(indy)))
+                print('prx',prx)
+                print('pry',pry)
+                print(indx.data[0])
+                print(indy.data[0])
+                print('lossx',lossx)
+                print('lossy',lossy)
+                print('--')
             else:
                 #print('--')
                 #print('pvx',pvx.data.numpy())
@@ -439,7 +453,7 @@ class HenaffPlanner():
                 lossy = lossf(pvy, gy)
             # Entropy penalty
             H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
-            lambda_H = -0.0001 #-0.01
+            lambda_H = 0.00 #-0.01
             # print('Entropy',H)
             #for i in range(0,self.nacts):
             #    H += a_t
@@ -458,7 +472,11 @@ class HenaffPlanner():
             # print('--')
             optimizer.zero_grad()
             loss.backward()
+            print('-----')
+            print(x_t)
             optimizer.step()
+            print(x_t)
+            print('=====')
             #x_t.data -= eta * x_t.grad.data
             # print('g_t',x_t.grad.data)
             # print('x_t',x_t.data)
@@ -479,6 +497,7 @@ class HenaffPlanner():
         print('TARGET END ',indx.data[0],indy.data[0])
         print('PREDICTED END',pvx.max(0)[1].data[0], pvy.max(0)[1].data[0])
         print('--')
+        return [ x.max(0)[1].data[0] for x in x_t ]
 
     def generatePlanOld(self,start_state,env,eta=0.05,niters=None):
         x_t = avar( torch.randn(self.nacts,self.action_size) * self.start_sigma, requires_grad=True )
@@ -556,6 +575,7 @@ def main():
     trainingFFANN = False
     manualTest = False
     autoTest = False
+    henaffHyperSearch = False
     runHenaffFFANN = True #True
     ####################################################
     if useFFANN:
@@ -673,10 +693,17 @@ def main():
             print(f.env.deconcatenateOneHotStateVector(start))
             #sys.exit(0)
             print('Building planner')
-            planner = HenaffPlanner(f,maxNumActions=3)
+            planner = HenaffPlanner(f,maxNumActions=2)
             print('Starting generation')
-            planner.generatePlan(start,niters=200,extraVerbose=False)
+            actions = planner.generatePlan(start,niters=100,extraVerbose=False)
 
+        if henaffHyperSearch:
+            print('Loading from',f_model_name)
+            f.load_state_dict( torch.load(f_model_name) )
+            ### Hyper-params ###
+            lambda_h = 0.01  # Entropy strength
+            eta = 0.5        # Learning rate
+            ###
     else:
         f_model_name = 'forward-lstm-stochastic.pt'    
         s = 'navigation' # 'transport'
