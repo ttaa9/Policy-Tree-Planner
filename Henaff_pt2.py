@@ -329,7 +329,7 @@ class ForwardModelLSTM(nn.Module):
 
 class HenaffPlanner():
 
-    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.25,startNoiseSigma=0.1,niters=200):
+    def __init__(self,forward_model,maxNumActions=1,noiseSigma=0.1,startNoiseSigma=0.1,niters=200):
         # Parameters
         self.sigma = noiseSigma
         self.start_sigma = startNoiseSigma
@@ -342,7 +342,7 @@ class HenaffPlanner():
         self.state_size = self.f.stateSize
         self.action_size = self.f.inputSize - self.f.stateSize
 
-    def generatePlan(self,start_state,eta=0.5,niters=None,goal_state=None,useCE=True,extraVerbose=False):
+    def generatePlan(self,start_state,eta=0.00003,niters=None,goal_state=None,useCE=False,extraVerbose=False):
         x_t = avar( torch.randn(self.nacts, self.action_size) * self.start_sigma, requires_grad=True )
         optimizer = torch.optim.Adam( [x_t], lr=eta )
         deconStartState = self.f.env.deconcatenateOneHotStateVector(start_state)
@@ -373,7 +373,7 @@ class HenaffPlanner():
                 #### Apply Gumbel Softmax ####
                 temperature = 0.01
                 logProbAction = torch.log( action ) 
-                action = gumbel_softmax(logProbAction, temperature)
+                #action = gumbel_softmax(logProbAction, temperature)
                 ##############################
                 #currState = self.f.stateSoftmax(currState)
                 #print(currState.shape)
@@ -408,21 +408,38 @@ class HenaffPlanner():
             #predFinal = self.f.env.deconcatenateOneHotStateVector( self.f.stateSoftmax(currState[0]) )
             #pvx = predFinal[0]
             #pvy = predFinal[1]
-            #
+            #print(indx)
+            #print(indy)
+            #indx = avar( torch.LongTensor( [0] ) )
+            #indy = avar( torch.LongTensor( [2] ) )
+            #pvx = avar( torch.zeros( 15 ) )
+            #pvx[ 0 ] = 1.0
+            #pvy = avar( torch.zeros( 15 ) )
+            #pvy[ 3 ] = 1.0
+            #print(indx)
+            #print(indy)
+            #pvx[ pvx > 0.0 ] = 0
+            #pvx[ indx ] = 1.0
+            #pvy[ pvy > 0.0 ]
+            #pvy[ indy ] = 1.0
+            #print('pvx',pvx)
+            #print('pvy',pvy)
+            #print(indx)
+            #print(indy)
             if useCE:
-                lossx = lossf(pvx.view(1,len(pvx)), indx) 
-                lossy = lossf(pvy.view(1,len(pvy)), indy)
+                lossx = lossf(pvx.view(1,pvx.shape[0]), indx) 
+                lossy = lossf(pvy.view(1,pvy.shape[0]), indy)
             else:
-                print('--')
-                print('pvx',pvx.data.numpy())
-                print('gx',gx.data.numpy())
-                print('pvy',pvy.data.numpy())
-                print('gy',gy.data.numpy())
+                #print('--')
+                #print('pvx',pvx.data.numpy())
+                #print('gx',gx.data.numpy())
+                #print('pvy',pvy.data.numpy())
+                #print('gy',gy.data.numpy())
                 lossx = lossf(pvx, gx)
                 lossy = lossf(pvy, gy)
             # Entropy penalty
             H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
-            lambda_H = -0.01
+            lambda_H = -0.0001 #-0.01
             # print('Entropy',H)
             #for i in range(0,self.nacts):
             #    H += a_t
@@ -431,7 +448,8 @@ class HenaffPlanner():
             verbose = True
             if verbose:
                 a_inds = ",".join([ str(a.max(dim=0)[1].data[0]) for a in a_t  ]) 
-                print(i,'->','Lx =',lossx.data[0],', Ly =',lossy.data[0],', H =',H.data[0],', A =',a_inds)
+                print(i,'->','Lx =',lossx.data[0],', Ly =',lossy.data[0],', H =',H.data[0],', TL =',loss.data[0],', A =',a_inds)
+                #sys.exit(0)
             #
             if extraVerbose:
                 print(i, '-> L =', lossx.data[0],' + ',lossy.data[0])
@@ -536,9 +554,9 @@ def main():
     ###
     useFFANN = True
     trainingFFANN = False
-    manualTest = True
+    manualTest = False
     autoTest = False
-    runHenaffFFANN = False #True
+    runHenaffFFANN = True #True
     ####################################################
     if useFFANN:
         f_model_name = 'forward-ffann-noisy-wan-1.pt' # 6 gets 99% on 0.1% noise
@@ -606,7 +624,7 @@ def main():
                     action = softmax( action )
                     print('\tSoft Noisy Action ',j,'=',action)
                     #### Apply Gumbel Softmax ####
-                    temperature = 0.001
+                    temperature = 0.01
                     logProbAction = torch.log( avar(torch.FloatTensor(action)) ) 
                     actiong = gumbel_softmax(logProbAction, temperature)
                     ##############################
@@ -651,13 +669,13 @@ def main():
             start[15] = 1
             start[15+15] = 1
             start[15+15+4+0] = 1
-            start[15+15+4+15+6] = 1
+            start[15+15+4+15+4] = 1
             print(f.env.deconcatenateOneHotStateVector(start))
             #sys.exit(0)
             print('Building planner')
             planner = HenaffPlanner(f,maxNumActions=3)
             print('Starting generation')
-            planner.generatePlan(start,niters=200,extraVerbose=True)
+            planner.generatePlan(start,niters=200,extraVerbose=False)
 
     else:
         f_model_name = 'forward-lstm-stochastic.pt'    
