@@ -14,7 +14,7 @@ import os, sys, pickle, numpy as np, numpy.random as npr, random as r
 ########################################################################################################
 
 class ForwardModelFFANN(nn.Module):
-    def __init__(self, env, layerSizes=[350,350], dropoutProb=0.0):
+    def __init__(self, env, layerSizes=[500,500], dropoutProb=0.05):
         super(ForwardModelFFANN, self).__init__()
         self.env = env
         self.actionSize = len( env.actions )
@@ -34,10 +34,10 @@ class ForwardModelFFANN(nn.Module):
         output = self.layer3(output) 
         return F.softmax(output,dim=1)
 
-    def runTraining(self,trainSet,validSet,maxIters=50000,modelFilenameToSave=None,testEvery=50,minibatchSize=150):
+    def runTraining(self,trainSet,validSet,maxIters=50000,modelFilenameToSave=None,testEvery=50,minibatchSize=200):
 
         ### Settings ###
-        eta_training = 0.0000125
+        eta_training = 0.00001
         optimizer = optim.Adam(self.parameters(), lr = eta_training * minibatchSize)
         lossFunction = nn.CrossEntropyLoss()
         validationTestSize = 3000
@@ -186,7 +186,7 @@ class HenaffPlanner():
 
     def generatePlan(self,
             start_state,         # The starting state of the agent (one-hot singDisc)
-            goal_state,          # The goal state of the agent as two ints
+            goal_state,          # The goal state of the agent as two ints (e.g. [gx,gy])
             eta=0.03,            # The learning rate given to ADAM
             noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
             niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
@@ -199,8 +199,6 @@ class HenaffPlanner():
         ):
 
         # Other settings
-        useIntDistance = False # Note: does not apply if using CE
-        useMSE_loss = (not useIntDistance) and (not useCE)
         if not noiseSigma is None: self.sigma = noiseSigma
         if not niters is None: self.niters = niters
 
@@ -210,18 +208,14 @@ class HenaffPlanner():
         # Choose loss function
         lossf = nn.CrossEntropyLoss()    
 
-        # Set goal state
-        deconStartState = self.f.env.deconcatenateOneHotStateVector(start_state)
-        if goal_state is None:
-            gx, gy = avar(torch.FloatTensor(deconStartState[-2])), avar(torch.FloatTensor(deconStartState[-1]))
-        else: print('Not yet implemented'); sys.exit(0)
-
+        # Get goal state position
+        gx_ind, gy_ind = avar(torch.LongTensor([goal_state[0]])), avar(torch.LongTensor([goal_state[1]]))
+        # print('g_ind',gx_ind,gy_ind)
+        g_statesn = [ self.f.env.singularDiscreteStateFromInts(goal_state[0],goal_state[1],ii) for ii in range(0,4) ]
+        g_states = [ avar(torch.LongTensor( [int(np.argmax(gsn)) ])) for gsn in g_statesn ]
+        # print('gs',g_states)
         # Indices of start state position
-        sindx = avar(torch.FloatTensor(deconStartState[0])).max(0)[1]
-        sindy = avar(torch.FloatTensor(deconStartState[1])).max(0)[1]
-
-        # Indices of goal state position
-        indx, indy = gx.max(0)[1], gy.max(0)[1]
+        sindx, sindy, sorien = self.f.env.singularDiscreteStateToInts(start_state)
 
         # Start optimization loop
         for i in range(self.niters):
@@ -246,61 +240,64 @@ class HenaffPlanner():
                 currInput = torch.unsqueeze(currInput,0)
                 # Get next state (to be used as next input) from forward model
                 currState = self.f.forward( currInput )
-                # Print result of current action if needed
-                if extraVerbose:
-                    print('Action:',k)
-                    self.f.printState(currInput[0,0:64])
-                    self.f.printAction(currInput[0,-10:])
-                    self.f.printState(currState[0])
-                    print('--')
             # Now have final (predicted) result of action sequence
-            # Extract predicted position of current state
-            pvx = currState[0,0:15] 
-            pvy = currState[0,15:30] 
+            # Compute the loss via the holder (power) mean of the CE losses
+            # print('cs',currState)
+            # print('gs',g_states[0])
+            holder_power = -3
+            lossce1 = lossf( currState , g_states[0] )
+            lossce2 = lossf( currState , g_states[1] )
+            lossce3 = lossf( currState , g_states[2] )
+            lossce4 = lossf( currState , g_states[3] )
+            lossce = ( 
+                    (lossce1.pow(holder_power) + lossce2.pow(holder_power) + lossce3.pow(holder_power) + lossce4.pow(holder_power)) / 4.0 
+                ).pow(1.0 / holder_power)
+            # pvx = currState[0,0:15] 
+            # pvy = currState[0,15:30] 
             # Compute loss
-            if useCE: # Cross-entropy loss
-                lossx = lossf(pvx.view(1,pvx.shape[0]), indx) 
-                lossy = lossf(pvy.view(1,pvy.shape[0]), indy)
-            elif useIntDistance: # Integer distance loss
-                ints = avar( torch.FloatTensor( list(range(15)) ) )
-                prx = torch.sum( ints * pvx )
-                pry = torch.sum( ints * pvy )
-                lossx = (1.0/15.0) * (prx - indx.data[0]).pow(2)
-                lossy = (1.0/15.0) * (pry - indy.data[0]).pow(2) 
-            else: # Using MSE loss via one-hot pos
-                lossx = lossf(pvx, gx)
-                lossy = lossf(pvy, gy)
+            # if useCE: # Cross-entropy loss
+                # lossx = lossf(pvx.view(1,pvx.shape[0]), indx) 
+                # lossy = lossf(pvy.view(1,pvy.shape[0]), indy)
+            # elif useIntDistance: # Integer distance loss
+            #     ints = avar( torch.FloatTensor( list(range(15)) ) )
+            #     prx = torch.sum( ints * pvx )
+            #     pry = torch.sum( ints * pvy )
+            #     lossx = (1.0/15.0) * (prx - indx.data[0]).pow(2)
+            #     lossy = (1.0/15.0) * (pry - indy.data[0]).pow(2) 
+            # else: # Using MSE loss via one-hot pos
+            #     lossx = lossf(pvx, gx)
+            #     lossy = lossf(pvy, gy)
             # Entropy penalty
             H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
             # Final loss function 
-            loss = lossx + lossy + lambda_h * H
+            loss = lossce + lambda_h * H
             # Print status
             if verbose:
                 a_inds = ",".join([ str(a.max(dim=0)[1].data[0]) for a in a_t  ]) 
-                print(i,'->','Lx =',lossx.data[0],', Ly =',lossy.data[0],', H =',H.data[0],', TL =',loss.data[0],', A =',a_inds)
+                #print(i,'->','Lx =',lossx.data[0],', Ly =',lossy.data[0],', H =',H.data[0],', TL =',loss.data[0],', A =',a_inds)
             # Clear the optimizer gradient
             optimizer.zero_grad()
             # Back-prop the errors to get the new gradients
             loss.backward()
             # Print the predicted result at the current iteration
-            if extraVerbose:
-                print('Predicted End:',pvx.max(0)[1].data[0],pvy.max(0)[1].data[0])
+            # if extraVerbose:
+            #     print('Predicted End:',pvx.max(0)[1].data[0],pvy.max(0)[1].data[0])
             # Ensure the x_t gradients are cleared
             x_t.grad.data.zero_()
         # Print and analyze the final plan, if desired
-        if verbose:
-            print('\nEnd\n')
-            print('Actions')
-            for k in range(0,self.nacts):
-                action = F.softmax( x_t[k,:], dim=0 )
-                print(action.max(0)[1].data[0],end=' -> ')
-                print(NavigationTask.actions[action.max(0)[1].data[0]],end=' ')
-                print(action.data)
-            print('--')
-            print('START ',sindx.data[0],sindy.data[0])
-            print('TARGET END ',indx.data[0],indy.data[0])
-            print('PREDICTED END',pvx.max(0)[1].data[0], pvy.max(0)[1].data[0])
-            print('--')
+        # if verbose:
+        #     print('\nEnd\n')
+        #     print('Actions')
+        #     for k in range(0,self.nacts):
+        #         action = F.softmax( x_t[k,:], dim=0 )
+        #         print(action.max(0)[1].data[0],end=' -> ')
+        #         print(NavigationTask.actions[action.max(0)[1].data[0]],end=' ')
+        #         print(action.data)
+        #     print('--')
+        #     print('START: ',sindx,sindy,sorien)
+        #     print('TARGET END: ',gx_ind,gy_ind)
+        #     print('PREDICTED END: ',pvx.max(0)[1].data[0], pvy.max(0)[1].data[0])
+        #     print('--')
         # Return the final action sequence 
         return [ x.max(0)[1].data[0] for x in x_t ]
 
@@ -320,8 +317,6 @@ def main():
     ####################################################
     useFFANN = True
     trainingFFANN = False # 1
-    manualTest = False # 2
-    autoTest = False # 3
     henaffHyperSearch = False # 4
     runHenaffFFANN = False # 5
     ####################################################
@@ -335,7 +330,7 @@ def main():
 
     if useFFANN:
 
-        f_model_name = 'forward-ffann-noisy-wan-1.pt' # 6 gets 99% on 0.1% noise
+        f_model_name = 'forward-ffann-singDisc-noisy-3.pt' 
         exampleEnv = NavigationTask()
         f = ForwardModelFFANN(exampleEnv)
 
@@ -345,7 +340,7 @@ def main():
             ts = "navigation-data-train-single-singularDiscrete.pickle"
             vs = "navigation-data-test-single-singularDiscrete.pickle"
             preload_name = None
-            saveName = 'forward-ffann-singDisc-noisy-1.pt'
+            saveName = 'forward-ffann-singDisc-noisy-3.pt'
             ############
             print('Reading Data')
             with open(ts,'rb') as inFile:
@@ -355,120 +350,47 @@ def main():
             if not preload_name is None:
                 print('Loading from',f_model_name)
                 f.load_state_dict( torch.load(f_model_name) )
-            f.runTraining(trainSet,validSet,maxIters=50000,modelFilenameToSave=saveName,testEvery=250)
+            f.runTraining(trainSet,validSet,maxIters=50000,modelFilenameToSave=saveName,testEvery=100)
 
-
-
-            #f.train(trainSet,validSet,)
-            #print('Saving to',saveName)
-            #torch.save(f.state_dict(), saveName)
 
         ################################################################################################################
-        elif manualTest:
-            ###
-            #f_model_name = 'forward-ffann-noisy6.pt'
-            ###
-            f.load_state_dict( torch.load(f_model_name) )
-            start = np.zeros(74, dtype=np.float32)
-            start[0+4] = 1
-            start[15+6] = 1
-            start[15+15+0] = 1
-            start[15+15+4+8] = 1
-            start[15+15+4+15+7] = 1
-            start[15+15+4+15+15+4] = 1.0
-            f.test(start)
-            print('-----\n','Starting manualTest loop')
-            for i in range(5):
-                width, height = 15, 15
-                p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
-                start_pos = [p_0, r.choice(NavigationTask.oriens)]
-                goal_pos = np.array([ npr.randint(0,width), npr.randint(0,height) ])
-                checkEnv = NavigationTask(
-                    width=width, height=height, agent_start_pos=start_pos, goal_pos=goal_pos,
-                    track_history=True, stochasticity=0.0, maxSteps=10)
-                s_0 = checkEnv.getStateRep()
-                #a1, a2 = np.zeros(10), np.zeros(10)
-                #a1[ npr.randint(0,10) ] = 1
-                #a2[ npr.randint(0,10) ] = 1
-                numActions = 3
-                currState = avar( torch.FloatTensor(s_0).unsqueeze(0) )
-                print('Start State')
-                f.printState( currState[0] )
-                actionSet = []
-                for j in range(numActions):
-                    action = np.zeros( 10 )
-                    action[ npr.randint(0,10) ] = 1
-                    action += npr.randn( 10 )*0.1
-                    action = Utils.softmax( action )
-                    print('\tSoft Noisy Action ',j,'=',action)
-                    #### Apply Gumbel Softmax ####
-                    temperature = 0.01
-                    logProbAction = torch.log( avar(torch.FloatTensor(action)) ) 
-                    actiong = GumbelSoftmax.gumbel_softmax(logProbAction, temperature)
-                    ##############################
-                    print('\tGumbel Action ',j,'=',actiong.data.numpy())
-                    actionSet.append( actiong )
-                    checkEnv.performAction( np.argmax(action) )
-                    a = actiong  # avar( torch.FloatTensor(actiong) )
-                    currState = f.forward( torch.cat([currState[0],a]).unsqueeze(0) )
-                    print("Intermediate State",j)
-                    f.printState( currState[0] )
-                #checkEnv.performAction(np.argmax(a1))
-                #checkEnv.performAction(np.argmax(a2))
-                s_1 = checkEnv.getStateRep()
-                #inval = np.concatenate( (s_0,a1) )
-                #outval1 = f.forward( avar(torch.FloatTensor(inval).unsqueeze(0)) )
-                #print(outval1.shape)
-                #print(a2.shape)
-                #inval2 = np.concatenate( (outval1[0].data.numpy(),a2) )
-                #outval2 = f.forward( avar(torch.FloatTensor(inval2).unsqueeze(0)) )
-                for action in actionSet:
-                    f.printAction(action)
-                print('Predicted')
-                f.printState( currState[0] )
-                print('Actual')
-                s1 = avar( torch.FloatTensor( s_1 ).unsqueeze(0) )
-                f.printState( s1[0] ) 
-                print("Rough accuracy", torch.sum( (currState - s1).pow(2) ).data[0] )
-                #print('Predicted',currState.data[0].numpy())
-                #print('Actual',s_1)
-                #outval1 = f.test(inval,s_1)
-                print('----\n')
-        
-        if autoTest:
+        if runHenaffFFANN: # 5
             print('Loading from',f_model_name)
             f.load_state_dict( torch.load(f_model_name) )
-            # TODO
-
-        ################################################################################################################
-        if runHenaffFFANN:
-            print('Loading from',f_model_name)
-            f.load_state_dict( torch.load(f_model_name) )
-            start = np.zeros(64)
-            start[0] = 1
-            start[15] = 1
-            start[15+15] = 1
-            start[15+15+4+0] = 1
-            start[15+15+4+15+4] = 1
-            print(f.env.deconcatenateOneHotStateVector(start))
+            print('Environment states')
+            start_px = 0
+            start_py = 0
+            start_orien = 0
+            start_state = exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien)
+            goal_state = [0,2]
             print('Building planner')
-            planner = HenaffPlanner(f,maxNumActions=2)
+            planner = HenaffPlanner(f, maxNumActions=2)
             print('Starting generation')
             actions = planner.generatePlan(
-                                start,
-                                eta=0.1,
-                                noiseSigma=0.5,
-                                niters=500,
-                                goal_state=None,
-                                useCE=True,
-                                verbose=True,
-                                extraVerbose=False,
-                                useGumbel=True,
-                                temp=0.1,
-                                lambda_h=-0.005,
-                                useIntDistance=False
-                                )
-            print('FINAL ACTIONS:', actions)
+                start_state,         # The starting state of the agent (one-hot singDisc)
+                goal_state,          # The goal state of the agent as two ints (e.g. [gx,gy])
+                eta=0.03,            # The learning rate given to ADAM
+                noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
+                niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
+                useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
+                verbose=False,       # Specifies verbosity
+                extraVerbose=False,  # Specifies extra verbosity
+                useGumbel=True,      # Whether to use Gumbel-Softmax in the action sampling
+                temp=0.01,           # The temperature of the Gumbel-Softmax method
+                lambda_h=0.0         # Specify the strength of entropy regularization (negative values encourage entropy)
+            )
+            print('START STATE:', start_px, start_py, start_orien)
+            print('FINAL ACTIONS:', ", ".join([str(a)+' ('+NavigationTask.actions[a]+')' for a in actions]))
+            print('GOAL STATE:', goal_state)
+            newEnv = NavigationTask(
+                agent_start_pos=[np.array([start_px,start_py]),NavigationTask.oriens[start_orien]],
+                goal_pos=np.array(goal_state))
+            for action in actions: newEnv.performAction(action)
+            state = newEnv.getStateRep(oneHotOutput=False)
+            pred_x = state[0]
+            pred_y = state[1]
+            pred_orien = NavigationTask.oriens[ np.argmax(state[2:6]) ]
+            print('PREDICTED FINAL STATE:',pred_x,pred_y,pred_orien)
 
         ################################################################################################################
         if henaffHyperSearch:

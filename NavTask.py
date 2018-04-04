@@ -124,6 +124,12 @@ class NavigationTask(SimpleGridTask):
         array[ px + (py * self.w) + (orienInd * self.w * self.h) ] = 1
         return array
 
+    def singularDiscreteStateFromInts(self,px,py,orien):
+        tlen = self.w * self.h * 4
+        array = np.zeros(tlen)
+        array[ px + (py * self.w) + (orien * self.w * self.h) ] = 1
+        return array
+
     # Can pass int or array
     def singularDiscreteStateToInts(self,fullyDiscreteState):
         if fullyDiscreteState is int:
