@@ -53,6 +53,16 @@ class NavigationTask(SimpleGridTask):
         # Agent pos + orien & goal pos
         self.stateSubVectors = 2 + 1 + 2       
 
+    def randomize(self,changeGoal=False):
+        px = npr.randint(0,self.w,1)[0]
+        py = npr.randint(0,self.h,1)[0]
+        self.agent_pos = np.array([px,py])
+        self.agent_orientation = npr.randint(0,4,1)[0]
+        if changeGoal:
+            gx = npr.randint(0,self.w,1)[0]
+            gy = npr.randint(0,self.h,1)[0]
+            self.goal_pos = np.array([px,py])
+
     # Action should be an int
     def performAction(self,actionIn):
         # Add noise in stochastic case
@@ -105,6 +115,31 @@ class NavigationTask(SimpleGridTask):
            p[2 + self.agent_orientation] = 1 # orientation as one-hot
            p[-2:] = copy.copy(self.goal_pos) # goal pos as two integers 
         return p # Env state
+
+    def getSingularDiscreteState(self):
+        tlen = self.w * self.h * 4
+        array = np.zeros(tlen)
+        px, py = self.agent_pos[0], self.agent_pos[1]
+        orienInd = self.agent_orientation
+        array[ px + (py * self.w) + (orienInd * self.w * self.h) ] = 1
+        return array
+
+    # Can pass int or array
+    def singularDiscreteStateToInts(self,fullyDiscreteState):
+        if fullyDiscreteState is int:
+            fullyDiscreteState = np.zeros(self.w * self.h * 4)
+            fullyDiscreteState[fullyDiscreteState] = 1
+        # if fold:
+        #     a = np.reshape( fullyDiscreteState, (self.w, self.h, 4) )
+        #     inds = np.unravel_index(a.argmax(), a.shape)
+        #     return inds
+        # else:
+        fullyDiscreteState = np.argmax(fullyDiscreteState)
+        z = fullyDiscreteState // (self.w * self.h);
+        fullyDiscreteState -= (z * self.w * self.h);
+        y = fullyDiscreteState // self.w;
+        x = fullyDiscreteState % self.w;
+        return (x,y,z)
 
     def display(self):
         print('Environment ('+str(self.w)+','+str(self.h)+')')
@@ -183,6 +218,33 @@ class NavigationTask(SimpleGridTask):
             trajs.append( cenv.getHistoryAsTupleArray() )
         return trajs
 
+    # Save as integers to save space
+    # x_i = singular_one_hot_state + one_hot_action, y_i = resulting singular_one_hot_state
+    def generateSingularDiscreteOneStepData(npoints=1000000,width=15,height=15,stochasticity=0.0,printEvery=100000):
+        data_x, data_y = [], []
+        numActions = len(NavigationTask.actions)
+        env = NavigationTask(width=width, height=height, track_history=True, stochasticity=stochasticity)
+        asIntArray = lambda s: np.array([np.argmax(s)]) 
+        for point in range(0,npoints):
+            env.randomize()
+            s0_large = env.getSingularDiscreteState()
+            s0_ind = asIntArray(s0_large)
+            action = npr.randint(0,numActions)
+            env.performAction(action)
+            s1_large = env.getSingularDiscreteState()
+            s1_ind = asIntArray(s1_large) 
+            oha = env._intToOneHot(action,numActions)
+            x_input = np.concatenate( (s0_ind, oha) )
+            data_x.append( x_input )
+            data_y.append( s1_ind )
+            if point % printEvery == 0: 
+                print('\tOn point',point)
+                #print(x_input)
+                #print(s1_ind)
+                # print(env.singularDiscreteStateToInts(s0))
+                # print('Action',action,env.actions[action])
+                # print(env.singularDiscreteStateToInts(s1))
+        return [np.array(data_x), np.array(data_y)]
 
     def generateSingleStepData(numDataPoints=1000000,width=15,height=15,dataPointsPerEnv=20,stochasticity=0.0):
         # Setup
@@ -250,6 +312,23 @@ def navmain():
         with open("navigation-data-train-single-small.pickle",'wb') as outFile:
             print('Saving'); pickle.dump(train,outFile)
         with open("navigation-data-test-single-small.pickle",'wb') as outFile:
+            print('Saving'); pickle.dump(test,outFile)
+
+    # env.randomize()
+    # env.display()
+    # s = env.getSingularDiscreteState()
+    # print(s)
+    # print( env.singularDiscreteStateToInts(s) )
+    #print( env.singularDiscreteStateToInts(s, fold=True) )
+
+    if True:
+        print('Generating Training Data')
+        train = NavigationTask.generateSingularDiscreteOneStepData(npoints=2000000)
+        print('Generating Testing Data')
+        test = NavigationTask.generateSingularDiscreteOneStepData(npoints=500000)
+        with open("navigation-data-train-single-singularDiscrete.pickle",'wb') as outFile:
+            print('Saving'); pickle.dump(train,outFile)
+        with open("navigation-data-test-single-singularDiscrete.pickle",'wb') as outFile:
             print('Saving'); pickle.dump(test,outFile)
 
 if __name__ == '__main__':
