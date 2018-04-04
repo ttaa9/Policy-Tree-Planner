@@ -151,7 +151,7 @@ class NavigationTask(SimpleGridTask):
         i,k,n = 0,1,len(self.history)
         while i < n:
             si = self.history[i]
-            print('State  '+str(k)+': P =',str(si[0:2])+", Orien = "+self.oriens[ self._oneHotToInt(si[2:]) ])
+            #print('State  '+str(k)+': P =',str(si[0:2])+", Orien = "+self.oriens[ self._oneHotToInt(si[2:]) ])
             if i < n-1: print('Action '+str(k)+':',self.actions[self.history[i+1]].replace("_"," "))
             k += 1; i += 2
 
@@ -169,13 +169,12 @@ class NavigationTask(SimpleGridTask):
         # a = np.zeros((self.w, self.h, self.numActions))
         # a[i,j,k] = 1
         # return a.flatten()
-
-    def deconcatenateOneHotStateVector(self,vec):
-        w,h,no = self.w,self.h,len(self.oriens)
+    def deconcatenateOneHotStateVector(self,vec,w=None,h=None,no=None):
+        if w==None and h==None and no==None:
+            w,h,no=self.w,self.h, len(self.oriens)
         starts, incs = [0, w, w+h, w+h+no, 2*w+h+no], [w, h, no, w, h]
         return [ vec[s:s+inc] for s,inc in zip(starts,incs) ]
 
-    #
     def _convertOneHotToHistoryState(self,one_hot_state_array):
         a = np.zeros(8) # p_x,p_y,orien,g_x,g_y
         incs = np.cumsum([0, self.w, self.h, self.numOriens, self.w, self.h])
@@ -287,7 +286,7 @@ class NavigationTask(SimpleGridTask):
 
 def navmain():
     env = NavigationTask() #(stochasticity=0.2)
-    if False:
+    if True:
         for i in range(0,1000):
             j = np.random.randint( env.numActions )
             print('--')
@@ -299,10 +298,10 @@ def navmain():
         print(thist[0:5])
         print('--')
         data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
-    if False:
+    if True:
         data = NavigationTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
         toSave = [env,data]
-        with open("navigation-data-test-small.pickle",'wb') as outFile:
+        with open("navigation-data-train -small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
     if False:
