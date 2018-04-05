@@ -386,6 +386,7 @@ class HenaffPlanner():
             optimizer.zero_grad()
             # Back-prop the errors to get the new gradients
             loss.backward()
+            optimizer.step()
             # Print the predicted result at the current iteration
             # if extraVerbose:
             #     print('Predicted End:',pvx.max(0)[1].data[0],pvy.max(0)[1].data[0])
@@ -419,7 +420,7 @@ class HenaffPlanner():
 
 ########################################################################################################
 
-def main():
+def mainQ():
 
     ts = "navigation-data-train-sequence-singularDiscrete.pickle"
     vs = "navigation-data-test-sequence-singularDiscrete.pickle"
@@ -434,7 +435,7 @@ def main():
 
 ########################################################################################################
 ########################################################################################################
-def mainOld():
+def main():
 
     ####################################################
     useFFANN = True
