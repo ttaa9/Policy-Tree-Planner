@@ -13,138 +13,6 @@ import os, sys, pickle, numpy as np, numpy.random as npr, random as r
 ########################################################################################################
 ########################################################################################################
 
-class ForwardModelFFANN(nn.Module):
-    def __init__(self, env, layerSizes=[350,350], dropoutProb=0.0):
-        super(ForwardModelFFANN, self).__init__()
-        self.env = env
-        self.actionSize = len( env.actions )
-        self.stateSize = len( env.getSingularDiscreteState() )
-        self.inputSize = self.actionSize + self.stateSize
-        self.layer1 = nn.Linear(self.inputSize, layerSizes[0])
-        self.dropout1 = nn.AlphaDropout(p=dropoutProb)
-        self.layer2 = nn.Linear(layerSizes[0], layerSizes[1])
-        self.dropout2 = nn.AlphaDropout(p=dropoutProb)
-        self.layer3 = nn.Linear(layerSizes[1], self.stateSize)
-
-    def forward(self, inputValue):
-        output = F.relu( self.layer1(inputValue) )
-        output = self.dropout1( output )
-        output = F.relu( self.layer2(output) ) 
-        output = self.dropout2( output )
-        output = self.layer3(output) 
-        return F.softmax(output,dim=1)
-
-    def runTraining(self,trainSet,validSet,maxIters=50000,modelFilenameToSave=None,testEvery=50,minibatchSize=200):
-
-        ### Settings ###
-        eta_training = 0.00001
-        optimizer = optim.Adam(self.parameters(), lr = eta_training * minibatchSize)
-        lossFunction = nn.CrossEntropyLoss()
-        validationTestSize = 3000
-        noiseType = 1
-
-        ### Load Data ###
-        # Note these are integers for states, to save memory, in numpy form
-        # Conversion to one-hot torch type occurs when the random mini-batches are extracted
-        train_x, train_y = trainSet
-        test_x, test_y = validSet
-        ntrain, ntest = len(train_x), len(test_x)
-
-        ### Function to extract minibatches from data ###
-        # Noise = 0 -> none, 1 -> uniform, 2 -> Gaussian+softmax
-        # maxUniformNoiseLevel \in [0.0,0.0011)
-        def getRandomMiniBatch(dsx,dsy,mbs,nmax,noiseType=1,
-            maxUniformNoiseLevel=0.001,gaussianSigma=0.001):
-            choices = npr.choice(nmax, size=mbs, replace=False) 
-            xs, ys = dsx[choices], dsy[choices]
-            newMB_x = np.zeros( (mbs, self.inputSize) )
-            newMB_y = np.zeros( mbs )
-            if noiseType == 0:
-                for i in range(mbs):
-                    jx, jy = int(xs[i,0]), int(ys[i,0]) 
-                    newMB_x[i,jx] = 1.0
-                    newMB_x[i,-10:] = xs[i,-10:]
-                    newMB_y[i] = jy 
-            elif noiseType == 1:
-                if self.stateSize*maxUniformNoiseLevel > 1:
-                    print('Noise level is untenable! Max =',1.0/self.stateSize)
-                    sys.exit(0)
-                for i in range(mbs):
-                    unifNoisedState = npr.uniform(low=0.0,high=maxUniformNoiseLevel,size=self.stateSize)
-                    jx, jy = int(xs[i,0]), int(ys[i,0])
-                    spikeValue = 1.0 - np.sum(unifNoisedState) + unifNoisedState[ jx ]
-                    newMB_x[i, 0:self.stateSize] = unifNoisedState
-                    newMB_x[i, jx] = spikeValue
-                    newMB_x[i, 0:self.stateSize] /= np.sum(newMB_x[i, 0:self.stateSize])
-                    newMB_x[i, -10:] = xs[i,-10:]
-                    newMB_y[i] = jy
-                    # print(np.argmax(newMB_x[i,0:self.stateSize]),',',
-                    #      np.sum(newMB_x[i, 0:self.stateSize]),',',
-                    #      newMB_x[i,np.argmax(newMB_x[i,0:self.stateSize])])
-            elif noiseType == 2:
-                for i in range(mbs):
-                    jx, jy = int(xs[i,0]), int(ys[i,0]) 
-                    noise = gaussianSigma * npr.normal(size=self.stateSize)
-                    newMB_x[i,jx] = 1.0
-                    newMB_x[i,0:self.stateSize] += noise
-                    newMB_x[i,0:self.stateSize] = Utils.softmax( newMB_x[i,0:self.stateSize] )
-                    newMB_x[i,-10:] = xs[i,-10:]
-                    newMB_y[i] = jy 
-                    # print(newMB_x[i,0:self.stateSize])
-                    # sys.exit(0)
-
-            newMB_x = avar( torch.FloatTensor(newMB_x), requires_grad=False )
-            newMB_y = avar( torch.LongTensor(newMB_y),  requires_grad=False )
-            return newMB_x, newMB_y
-
-        ### Training Loop ###
-        for i in range(0,maxIters):
-            #print(i)
-            x, y = getRandomMiniBatch(train_x, train_y, minibatchSize, ntrain,
-                                      noiseType=noiseType,maxUniformNoiseLevel=0.0001)
-            y_hat = self.forward(x)
-            loss = lossFunction(y_hat, y)
-            loss.backward() 
-            optimizer.step()
-            optimizer.zero_grad()
-            self.zero_grad()
-            if i % testEvery == 0:
-                self.eval() # Turn off dropout
-                print('Epoch', str(i) + ': L_t =', '%.4f' % loss.data[0], end=', ')
-                vx, vy = getRandomMiniBatch(test_x,test_y,validationTestSize,ntest,
-                                            noiseType=noiseType,maxUniformNoiseLevel=0.0001)
-                predv = self.forward(vx)
-                lossv = lossFunction(predv, vy)
-                print('L_v =', '%.4f' % lossv.data[0], end=', ')
-                acc = self._accuracyBatch(vy,predv)
-                print('Acc =', '%.4f' % acc)
-                self.train() # Turn back on dropout
-                # Save model
-                if not modelFilenameToSave is None:
-                    torch.save(self.state_dict(), modelFilenameToSave)
-
-    def printState(self,s,pre=''):
-        trueInds = self.env.singularDiscreteStateToInts(s)
-        print(str(pre) + 'px:',    trueInds[0])
-        print(str(pre) + 'py:',    trueInds[1])
-        print(str(pre) + 'orien:', trueInds[2],'(',self.env.oriens[trueInds[2]],')')
-
-    def printAction(self,a,pre=''):
-        if type(a) is avar: ind = np.argmax(a.data.numpy())
-        else: ind = np.argmax(a)
-        print(str(pre)+'a:',self.env.actions[ind],'('+str(ind)+')')
-
-    def _accuracyBatch(self,ylist,yhatlist):
-        n, acc = ylist.data.shape[0], 0.0 
-        for i in range(n):
-            acc += self._accuracySingle(ylist[i], yhatlist[i])
-        return acc / n
-
-    def _accuracySingle(self,label,prediction):
-        return 1.0 if int(label.data.numpy()) == int(np.argmax(prediction.data.numpy())) else 0.0
-
-########################################################################################################
-
 class ForwardModelLSTM_SD(nn.Module):
 
     def __init__(self, env, h_size=100, nlayers=1, lstmdropout=0.0):
@@ -163,92 +31,133 @@ class ForwardModelLSTM_SD(nn.Module):
         # Linear (FC) layer for final output transformation
         self.hiddenToState = nn.Linear(self.hdim, self.stateSize)
         # Initialize LSTM state variables
-        self.reInitialize()
+        #self.reInitialize()
 
-    def reInitialize(self):
-        # Size = (num_layers, minibatch_size, hidden_dim)
-        self.hidden = ( avar(torch.zeros(self.nlayers,1,self.hdim)), 
-                        avar(torch.zeros(self.nlayers,1,self.hdim)) )
+    # def reInitialize(self):
+    #     # Size = (num_layers, minibatch_size, hidden_dim)
+    #     self.hidden = ( avar(torch.zeros(self.nlayers,1,self.hdim)), 
+    #                     avar(torch.zeros(self.nlayers,1,self.hdim)) )
 
+    # PT LSTM
+    # Input: inval, (h,c)
+    #  - inval: (seq_len, batch, input_size)
+    #  - (h,c): each is (num_layers * num_directions, batch, hidden_size) 
+    #           [num_directions = 2 for bidir_lstm]
+    # Output: outval, (h_n,c_n)
+    #  - outval: (seq_len, batch, hidden_size * num_directions)
+    #  - h_n is the hidden state at the final timestep
+    #  - c_n is the cell state at the final timestep
+
+    # Pass hidden=None to reinitialize
     def step(self, inputVal, hidden=None):
         newIn = self.embed(inputVal.view(1, -1)).unsqueeze(1)
         output, hidden = self.lstm(newIn, hidden)
-        output = self.hiddenToState(output.squeeze(1))
+        output = F.softmax( self.hiddenToState(output.squeeze(1)), dim=1 )
         return output, hidden
 
     def forward(self, inputs, hidden=None, force=True, steps=0):
         if force or steps == 0: steps = len(inputs)
-        outputs = Variable(torch.zeros(steps, 1, 1))
+        outputs = avar(torch.zeros(steps, 1, self.stateSize))
         for i in range(steps):
             if force or i == 0:
                 inputv = inputs[i]
             else:
-                inputv = output
+                trueInput = inputs[i] # Even not teacher forcing, still take true action
+                # print('--')
+                # print(output.shape)
+                # print(trueInput[-self.actionSize:].shape)
+                inputv = torch.cat( [output,trueInput[-self.actionSize:].unsqueeze(0)], dim=1 )
             output, hidden = self.step(inputv, hidden)
             outputs[i] = output
         return outputs, hidden  
 
     # Only retrieves the last (final) result state
-    def forwardToLast(self, stateSeq):
-        lstm_out, self.hidden = self.lstm( stateSeq, self.hidden )
-        return F.softmax( self.hiddenToState( lstm_out[-1,0,:] ) ) # Only run on last output
+    # def forwardToLast(self, stateSeq):
+    #     lstm_out, self.hidden = self.lstm( stateSeq, self.hidden )
+    #     return F.softmax( self.hiddenToState( lstm_out[-1,0,:] ) ) # Only run on last output
 
-    def runTraining(self, trainSeq, validSeq, nEpochs=800, epochLen=175, validateEvery=25, vbs=500, printEvery=5, noiseSigma=0.01):
-        print('-- Starting Training (nE=' + str(nEpochs) + ',eL=' + str(epochLen) + ') --')
-        optimizer = optim.Adam(self.parameters(), lr = 0.03 * epochLen / 150.0)
+    # Get final state via outputs[-1]
+    def runOnActionSequence(self,actions,hidden=None):
+        steps = len(actions)
+        outputs = avar(torch.zeros(steps, 1, self.stateSize)) # seqlen x batchlen x stateSize
+        for i in range(steps):
+            action = actions[i]
+            inputv = torch.cat( [output, action.unsqueeze(0)], dim=1 )
+            output, hidden = self.step(inputv, hidden)
+            outputs[i] = output
+        return outputs, hidden 
+
+    def runTraining(self, trainSeq, validSeq, modelFilenameToSave=None,
+            nEpochs=5000, epochLen=100, validateEvery=25, vbs=2000, noiseSigma=0.01,
+            teacherForcingProbStart=0.85, teacherForcingProbEnd=0.0, eta_lr=0.001): # 0.001 ok
+        print('--- Starting Training (nE=' + str(nEpochs) + ',eL=' + str(epochLen) + ') ---')
+        optimizer = optim.Adam(self.parameters(), lr = eta_lr)
+        lossf = nn.CrossEntropyLoss()
         ns, na, tenv = self.stateSize, self.actionSize, trainSeq.env
+        teacherForcingProb = lambda t: teacherForcingProbStart*(1-t) + teacherForcingProbEnd*t
         for epoch in range(nEpochs):
-            if epoch % printEvery == 0: print('Epoch:',epoch, end='')
-            loss = 0.0
-            self.zero_grad() # Zero out gradients
+            if epoch % validateEvery == 0: print('Epoch:',epoch, end='')
             train_x, train_y = trainSeq.getRandomMinibatch(epochLen)
-            for i in range(epochLen):
-                self.reInitialize() # Reset LSTM hidden state
-                seq, labels = train_x, train_y #trainSeq.randomTrainingPair() # Current value
-                # seq = [ s + npr.randn(len(s))*noiseSigma for s in seq ]
-                seq = [ avar(torch.from_numpy(s)) for s in seq] 
-                #seq = [ torch.cat([self.stateSoftmax(sa[0:ns], tenv), F.softmax(sa[ns:ns+na])]) for sa in seq ]
-                seqn = torch.cat(seq).view(len(seq), 1, -1) # [seqlen x batchlen x featureLen]
-                prediction = self.forward(seqn)#[-1,:]
-                label = avar(torch.from_numpy(label).float())
-                loss += self._lossFunction(prediction, label, env=tenv)
-            loss.backward()
-            optimizer.step()
-            if epoch % printEvery == 0: print(" -> AvgLoss",str(loss.data[0] / epochLen))
+            # TODO sigma noise
+            # print(np.array(train_y))
+            # print('--')
+            # print(np.array(train_y).tolist())
+            # sys.exit(0)
+            lossTotal = 0.0
+            currTeacherProb = teacherForcingProb(float(epoch) / nEpochs)
+            for seq_x, label_y in zip(train_x, train_y):
+                # self.reInitialize()
+                seq_x = avar(torch.FloatTensor(seq_x), requires_grad=False)
+                # print('\nSeq_x Shape',seq_x.shape)
+                # print('Label_y',label_y)
+                label_y = avar(torch.LongTensor(label_y), requires_grad=False)
+                # print('Label_y Shape',label_y.shape)
+                useTeacherForcing = r.random() < currTeacherProb
+                outputs, hidden = self.forward(seq_x, None, useTeacherForcing)
+                # print('OS',outputs.shape)
+                loss = lossf(outputs.squeeze(1), label_y)
+                lossTotal += loss.data[0]
+                # Back-propagation
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+            #if epoch % printEvery == 0: print(" -> AvgLoss",str(lossTotal / epochLen),end=', ')
             if epoch % validateEvery == 0:
-                bdata,blabels,bseqlen = validSeq.next(vbs,nopad=True)
-                acc1, _ = self._accuracyBatch(bdata,blabels,validSeq.env)
-                bdata,blabels,bseqlen = trainSeq.next(vbs,nopad=True)
-                acc2, _ = self._accuracyBatch(bdata,blabels,tenv)
-                print('\tCurrent Training Acc (est) =', acc1)
-                print('\tCurrent Validation Acc (est) =', acc2)
-        # Check training & final validation accuracy
-        print('----')
-        nmax = 5000 # Num from total to check at the end
-        totalTrainAcc,nt = self._accuracyBatch(trainSeq.unpaddedData()[0:nmax],trainSeq.labels[0:nmax],trainSeq.env)
-        print('Final Train Acc ('+str(nt)+'):',totalTrainAcc)
-        totalValidAcc,nv = self._accuracyBatch(validSeq.unpaddedData()[0:nmax],validSeq.labels[0:nmax],validSeq.env)
-        print('Final Validation Acc ('+str(nv)+'):',totalValidAcc)
+                print(' (p_tf = ' + '%.2f' % (currTeacherProb) + ')',end='')
+                print(" -> AvgLoss",'%.4f' % (lossTotal / epochLen),end=', ')
+                print('Val Loss: ',end='')
+                vx, vy = validSeq.getRandomMinibatch(vbs)
+                lossc, acc = 0.0, 0.0
+                for valid_x, valid_y in zip(vx, vy):
+                    valid_x = avar(torch.FloatTensor(valid_x), requires_grad=False)
+                    # print('\nSeq_x Shape',seq_x.shape)
+                    # print('Label_y',label_y)
+                    valid_y = avar(torch.LongTensor(valid_y), requires_grad=False)
+                    teacherForced = False
+                    # self.reInitialize()
+                    outputs, hidden = self.forward(valid_x, None, teacherForced)
+                    lossc += lossf(outputs.squeeze(1), valid_y).data[0]
+                    #print('OS',outputs.shape)       # seqlen x 1 x state_size
+                    #print('HS1',hidden[0].shape)    # 1 x 1 x h_dim
+                    #print('HS2',hidden[1].shape)    # 1 x 1 x h_dim
+                    finalOutput = outputs.squeeze(1)[-1]
+                    outputInd = finalOutput.max(0)[1]
+                    # print(outputInd)
+                    # print(valid_y[-1])
+                    correct = outputInd.data[0] == valid_y[-1].data[0]
+                    # print(correct)
+                    if correct: acc += 1.0
+                    # print('---')
+                    # print('fo',finalOutput)
+                    # print('fos',finalOutput.shape)
+                    # print('ts',torch.sum(finalOutput))
+                    # sys.exit(0)
+                print('%.4f' % (lossc / vbs) + ', Val Acc:', '%.4f' % (acc / float(vbs)) )
+                # Save model
+                if not modelFilenameToSave is None:
+                    torch.save(self.state_dict(), modelFilenameToSave)
+ 
 
-    def _accuracyBatch(self,seqs,labels,env):
-        n, acc = float(len(seqs)), 0.0
-        for s,l in zip(seqs,labels): acc += self._accuracySingle(s,l,env)
-        return acc / n, int(n)
-
-    # Accuracy averaged over subvecs
-    def _accuracySingle(self,seq,label,env):
-        seq = [avar(torch.from_numpy(s).float()) for s in seq] 
-        seq = torch.cat(seq).view(len(seq), 1, -1) # [seqlen x batchlen x hidden_size]
-        self.reInitialize() # Reset LSTM hidden state
-        prediction = self.forward(seq) # Only retrieves final time state
-        predVec = env.deconcatenateOneHotStateVector(prediction)
-        labelVec = env.deconcatenateOneHotStateVector(label)
-        locAcc = 0.0
-        for pv, lv in zip(predVec, labelVec):
-            _, ind_pred = pv.max(0)
-            ind_label = np.argmax(lv)
-            locAcc += 1.0 if ind_pred.data[0] == ind_label else 0.0
-        return locAcc / len(predVec)
 
 ########################################################################################################
 
@@ -424,11 +333,18 @@ def main():
     ts = "navigation-data-train-sequence-singularDiscrete.pickle"
     vs = "navigation-data-test-sequence-singularDiscrete.pickle"
     
+    f_model_name = 'forward-lstm-singDisc-1.pt'
+
     exampleEnv = NavigationTask()
     #trainSeqs = SingDiscSeqData(ts,exampleEnv)
     validSeqs = SingDiscSeqData(vs,exampleEnv)
 
     f = ForwardModelLSTM_SD(exampleEnv)
+
+    f.runTraining(validSeqs, validSeqs, modelFilenameToSave=f_model_name)
+
+
+
 
 
 

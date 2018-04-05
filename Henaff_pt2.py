@@ -223,7 +223,6 @@ class ForwardModelFFANN(nn.Module):
 ########################################################################################################
 
 class ForwardModelLSTM(nn.Module):
-    ''' Currently has a bug. Probably. '''
 
     def __init__(self, inputSize, stateSize, h_size=100, nlayers=1):
         super(ForwardModelLSTM, self).__init__()
