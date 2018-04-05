@@ -23,6 +23,7 @@ class ForwardModelLSTM_SD(nn.Module):
         self.nlayers = nlayers
         # Input dimensions are (seq_len, batch, input_size)
         self.hdim = h_size
+        self.env = env
         # Linear (FC) layer for initial input embedding
         self.embed = nn.Linear(self.inputSize, self.hdim)
         # PT LSTM
@@ -59,7 +60,7 @@ class ForwardModelLSTM_SD(nn.Module):
         return outputs, hidden  
 
     # Get final state via outputs[-1]
-    def runOnActionSequence(self,actions,hidden=None):
+    def runOnActionSequence(self,start_state,actions,hidden=None):
         steps = len(actions)
         outputs = avar(torch.zeros(steps, 1, self.stateSize)) # seqlen x batchlen x stateSize
         for i in range(steps):
@@ -208,7 +209,7 @@ class HenaffPlanner():
                 a_t_input = a_t
 
             # Run through the lstm forward model
-            outputs, hidden = self.f.runOnActionSequence(a_t_input,hidden=None)
+            outputs, hidden = self.f.runOnActionSequence(currState,a_t_input,hidden=None)
             finalOutput = output[-1]
 
             # Now have final (predicted) result of action sequence
@@ -243,15 +244,15 @@ def main():
 
     ####### Settings #######
     preloadModel = True
-    runTraining = True      # Task 1
-    testHenaff = False       # Task 2
+    runTraining = False      # Task 1
+    testHenaff = True       # Task 2
     ########################
 
     ############################ External Files ############################
     ts = "navigation-data-train-sequence-singularDiscrete.pickle"
     vs = "navigation-data-test-sequence-singularDiscrete.pickle"
-    f_model_name_to_preload = 'forward-lstm-singDisc-1.pt'    
-    f_model_name_to_save = 'forward-lstm-singDisc-2.pt'    
+    f_model_name_to_preload = 'forward-lstm-singDisc-2.pt'    
+    f_model_name_to_save = 'forward-lstm-singDisc-2.pt'   # For training
     ########################################################################
 
     # Define shell environment and empty forward model
