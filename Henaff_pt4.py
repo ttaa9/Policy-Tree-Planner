@@ -14,7 +14,7 @@ import os, sys, pickle, numpy as np, numpy.random as npr, random as r
 ########################################################################################################
 
 class ForwardModelFFANN(nn.Module):
-    def __init__(self, env, layerSizes=[500,500], dropoutProb=0.05):
+    def __init__(self, env, layerSizes=[350,350], dropoutProb=0.0):
         super(ForwardModelFFANN, self).__init__()
         self.env = env
         self.actionSize = len( env.actions )
@@ -319,6 +319,7 @@ def main():
     trainingFFANN = False # 1
     henaffHyperSearch = False # 4
     runHenaffFFANN = False # 5
+    manualTest = False # 2
     ####################################################
 
     if len(sys.argv) > 1:
@@ -330,7 +331,7 @@ def main():
 
     if useFFANN:
 
-        f_model_name = 'forward-ffann-singDisc-noisy-3.pt' 
+        f_model_name = 'forward-ffann-singDisc-noisy-2.pt' 
         exampleEnv = NavigationTask()
         f = ForwardModelFFANN(exampleEnv)
 
@@ -352,6 +353,26 @@ def main():
                 f.load_state_dict( torch.load(f_model_name) )
             f.runTraining(trainSet,validSet,maxIters=50000,modelFilenameToSave=saveName,testEvery=100)
 
+        if manualTest: # 2
+            print('Loading from',f_model_name)
+            f.load_state_dict( torch.load(f_model_name) )
+            print('Environment states')
+            ###
+            start_px = 7
+            start_py = 9
+            start_orien = 1
+            action = [5,1,5]  
+            ###
+            cstate = avar(torch.FloatTensor( exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien) )).unsqueeze(0)
+            for act in action:
+                action1h = avar(torch.FloatTensor( exampleEnv._intToOneHot(act, 10) )).unsqueeze(0)
+                inputVal = torch.cat([cstate, action1h], dim=1) 
+                cstate = f.forward( inputVal )
+            print(cstate)
+            print( "sx,sy,sorien =", start_px,',',start_py,',',start_orien )
+            print( "As =", ",".join([NavigationTask.actions[a] for a in action]) )
+            print( "px,py,orien =", f.env.singularDiscreteStateToInts( cstate.squeeze(0).data.numpy() ))
+            
 
         ################################################################################################################
         if runHenaffFFANN: # 5
@@ -369,13 +390,13 @@ def main():
             actions = planner.generatePlan(
                 start_state,         # The starting state of the agent (one-hot singDisc)
                 goal_state,          # The goal state of the agent as two ints (e.g. [gx,gy])
-                eta=0.03,            # The learning rate given to ADAM
+                eta=0.01,            # The learning rate given to ADAM
                 noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
                 niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
                 useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
                 verbose=False,       # Specifies verbosity
                 extraVerbose=False,  # Specifies extra verbosity
-                useGumbel=True,      # Whether to use Gumbel-Softmax in the action sampling
+                useGumbel=False,      # Whether to use Gumbel-Softmax in the action sampling
                 temp=0.01,           # The temperature of the Gumbel-Softmax method
                 lambda_h=0.0         # Specify the strength of entropy regularization (negative values encourage entropy)
             )
