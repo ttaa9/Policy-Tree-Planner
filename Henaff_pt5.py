@@ -43,7 +43,7 @@ class ForwardModelLSTM_SD(nn.Module):
     def step(self, inputVal, hidden=None):
         newIn = self.embed(inputVal.view(1, -1)).unsqueeze(1)
         output, hidden = self.lstm(newIn, hidden)
-        output = F.softmax( self.hiddenToState(output.squeeze(1)), dim=1 )
+        output = self.hiddenToState(output.squeeze(1))
         return output, hidden
 
     def forward(self, inputs, hidden=None, force=True, steps=0):
@@ -63,6 +63,7 @@ class ForwardModelLSTM_SD(nn.Module):
     def runOnActionSequence(self,start_state,actions,hidden=None):
         steps = len(actions)
         outputs = avar(torch.zeros(steps, 1, self.stateSize)) # seqlen x batchlen x stateSize
+        output = start_state
         for i in range(steps):
             action = actions[i]
             inputv = torch.cat( [output, action.unsqueeze(0)], dim=1 )
@@ -71,8 +72,8 @@ class ForwardModelLSTM_SD(nn.Module):
         return outputs, hidden 
 
     def runTraining(self, trainSeq, validSeq, modelFilenameToSave=None,
-            nEpochs=5000, epochLen=100, validateEvery=25, vbs=2500, noiseSigma=0.01,
-            teacherForcingProbStart=0.9, teacherForcingProbEnd=0.0, eta_lr=0.001): # 0.001 ok
+            nEpochs=10000, epochLen=150, validateEvery=50, vbs=3000, noiseSigma=0.01,
+            teacherForcingProbStart=0.0, teacherForcingProbEnd=0.0, eta_lr=0.001): # 0.001 ok
         print('--- Starting Training (nE=' + str(nEpochs) + ',eL=' + str(epochLen) + ') ---')
         optimizer = optim.Adam(self.parameters(), lr = eta_lr)
         lossf = nn.CrossEntropyLoss()
@@ -83,18 +84,21 @@ class ForwardModelLSTM_SD(nn.Module):
             train_x, train_y = trainSeq.getRandomMinibatch(epochLen)
             # TODO sigma noise for actions?!?!
             lossTotal = 0.0
+            loss = 0.0
             currTeacherProb = teacherForcingProb(float(epoch) / nEpochs)
             for seq_x, label_y in zip(train_x, train_y):
                 seq_x = avar(torch.FloatTensor(seq_x), requires_grad=False)
                 label_y = avar(torch.LongTensor(label_y), requires_grad=False)
                 useTeacherForcing = r.random() < currTeacherProb
                 outputs, hidden = self.forward(seq_x, None, useTeacherForcing)
-                loss = lossf(outputs.squeeze(1), label_y)
-                lossTotal += loss.data[0]
+                currLoss = lossf(outputs.squeeze(1), label_y) 
+                loss += currLoss                
+                lossTotal += currLoss #loss.data[0]
                 # Back-propagation
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+            loss = loss / epochLen
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
             if epoch % validateEvery == 0:
                 print(' (p_tf = ' + '%.2f' % (currTeacherProb) + ')',end='')
                 print(" -> AvgLoss",'%.4f' % (lossTotal / epochLen),end=', ')
@@ -163,7 +167,6 @@ class HenaffPlanner():
             eta=0.03,            # The learning rate given to ADAM
             noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
             niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
-            useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
             verbose=False,       # Specifies verbosity
             extraVerbose=False,  # Specifies extra verbosity
             useGumbel=True,      # Whether to use Gumbel-Softmax in the action sampling
@@ -210,7 +213,11 @@ class HenaffPlanner():
 
             # Run through the lstm forward model
             outputs, hidden = self.f.runOnActionSequence(currState,a_t_input,hidden=None)
-            finalOutput = output[-1]
+            finalOutput = outputs[-1]
+
+            print(finalOutput)
+            print(finalOutput.max())
+            print('---')
 
             # Now have final (predicted) result of action sequence
             # Compute the loss via the holder (power) mean of the CE losses
@@ -218,11 +225,20 @@ class HenaffPlanner():
             lossce2 = lossf( finalOutput , g_states[1] )
             lossce3 = lossf( finalOutput , g_states[2] )
             lossce4 = lossf( finalOutput , g_states[3] )
-            lossce = (( lossce1.pow(holder_power) + 
-                        lossce2.pow(holder_power) + 
-                        lossce3.pow(holder_power) + 
-                        lossce4.pow(holder_power) ) / 4.0 
-                     ).pow(1.0 / holder_power)
+            useMin = True
+            if useMin:
+                
+                lossList = torch.cat([lossce1, lossce2, lossce3, lossce4]) 
+                print( lossList )
+                print( lossList.shape )
+                losses = lossList #torch.FloatTensor( lossList )
+                lossce = torch.min( losses )
+            else:
+                lossce = (( lossce1.pow(holder_power) + 
+                            lossce2.pow(holder_power) + 
+                            lossce3.pow(holder_power) + 
+                            lossce4.pow(holder_power) ) / 4.0 
+                        ).pow(1.0 / holder_power)
             # Entropy penalty
             H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
             # Final loss function 
@@ -243,16 +259,17 @@ class HenaffPlanner():
 def main():
 
     ####### Settings #######
-    preloadModel = True
-    runTraining = False      # Task 1
-    testHenaff = True       # Task 2
+    preloadModel = False
+    runTraining = True     # Task 1
+    testHenaff = False     # Task 2
+    testFM = False         # Task 3
     ########################
 
     ############################ External Files ############################
     ts = "navigation-data-train-sequence-singularDiscrete.pickle"
     vs = "navigation-data-test-sequence-singularDiscrete.pickle"
-    f_model_name_to_preload = 'forward-lstm-singDisc-2.pt'    
-    f_model_name_to_save = 'forward-lstm-singDisc-2.pt'   # For training
+    f_model_name_to_preload = 'forward-lstm-singDisc-9-LessTF-2.pt'    
+    f_model_name_to_save = 'forward-lstm-singDisc-TF0-ns-1.pt'    # For training
     ########################################################################
 
     # Define shell environment and empty forward model
@@ -271,15 +288,31 @@ def main():
             trainSeqs, 
             validSeqs, 
             modelFilenameToSave=f_model_name_to_save,
-            nEpochs=5000, 
-            epochLen=100, 
-            validateEvery=50, 
-            vbs=2500, 
-            noiseSigma=0.01, # Note: does nothing
-            teacherForcingProbStart=0.1, 
-            teacherForcingProbEnd=0.0, 
-            eta_lr=0.001
+            noiseSigma=0.01 # Note: does nothing
         )
+
+    if testFM:
+        # Start Location
+        start_px = 1
+        start_py = 1
+        start_orien = 0
+        start_state = exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien)
+        # Actions
+        actions = np.zeros((5,10))
+        actions[ 0, 8 ] = 1.0
+        actions[ 1, 7 ] = 1.0
+        actions[ 2, 2 ] = 1.0
+        actions[ 3, 7 ] = 1.0
+        actions[ 4, 8 ] = 1.0
+        actions = avar( torch.FloatTensor( actions ) )
+        #print(actions)
+        #print(actions[0])
+        # Get Prediction
+        start_state = avar( torch.FloatTensor( start_state ) )
+        outputs, hidden = f.runOnActionSequence(start_state.unsqueeze(0), actions, hidden=None)
+        finalOutput = outputs[-1]
+        print(finalOutput.max()) 
+        print('Pred final state',f.env.singularDiscreteStateToInts(finalOutput.data.numpy()[0]))
 
     #
     if testHenaff:
@@ -289,20 +322,18 @@ def main():
         start_orien = 0
         start_state = exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien)
         goal_state = [0,2]
+        maxNumActions = 2
         print('Building planner')
-        planner = HenaffPlanner(f, maxNumActions=2)
+        planner = HenaffPlanner(f, maxNumActions=maxNumActions)
         print('Starting generation')
         actions = planner.generatePlan(
             start_state,         # The starting state of the agent (one-hot singDisc)
             goal_state,          # The goal state of the agent as two ints (e.g. [gx,gy])
             eta=0.01,            # The learning rate given to ADAM
-            noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
-            niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
-            useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
-            verbose=False,       # Specifies verbosity
-            extraVerbose=False,  # Specifies extra verbosity
-            useGumbel=False,     # Whether to use Gumbel-Softmax in the action sampling
-            temp=0.01,           # The temperature of the Gumbel-Softmax method
+            noiseSigma=0.25,     # Noise strength on inputs. Overwrites the default setting from the init
+            niters=100,         # Number of optimization iterations. Overwrites the default setting from the init
+            useGumbel=True,     # Whether to use Gumbel-Softmax in the action sampling
+            temp=1.0,           # The temperature of the Gumbel-Softmax method
             lambda_h=0.0         # Specify the strength of entropy regularization (negative values encourage entropy)
         )
         print('START STATE:', start_px, start_py, start_orien)
