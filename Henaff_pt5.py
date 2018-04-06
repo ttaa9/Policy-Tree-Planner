@@ -15,7 +15,7 @@ import os, sys, pickle, numpy as np, numpy.random as npr, random as r
 
 class ForwardModelLSTM_SD(nn.Module):
 
-    def __init__(self, env, h_size=100, nlayers=1, lstmdropout=0.0):
+    def __init__(self, env, h_size=120, nlayers=1, lstmdropout=0.0):
         super(ForwardModelLSTM_SD, self).__init__()
         self.stateSize = len(env.getSingularDiscreteState())
         self.actionSize = len(env.actions)
@@ -43,7 +43,7 @@ class ForwardModelLSTM_SD(nn.Module):
     def step(self, inputVal, hidden=None):
         newIn = self.embed(inputVal.view(1, -1)).unsqueeze(1)
         output, hidden = self.lstm(newIn, hidden)
-        output = F.softmax( self.hiddenToState(output.squeeze(1)), dim=1 )
+        output = self.hiddenToState(output.squeeze(1))
         return output, hidden
 
     def forward(self, inputs, hidden=None, force=True, steps=0):
@@ -63,6 +63,7 @@ class ForwardModelLSTM_SD(nn.Module):
     def runOnActionSequence(self,start_state,actions,hidden=None):
         steps = len(actions)
         outputs = avar(torch.zeros(steps, 1, self.stateSize)) # seqlen x batchlen x stateSize
+        output = start_state
         for i in range(steps):
             action = actions[i]
             inputv = torch.cat( [output, action.unsqueeze(0)], dim=1 )
@@ -71,9 +72,9 @@ class ForwardModelLSTM_SD(nn.Module):
         return outputs, hidden 
 
     def runTraining(self, trainSeq, validSeq, modelFilenameToSave=None,
-            nEpochs=5000, epochLen=100, validateEvery=25, vbs=2500, noiseSigma=0.01,
-            teacherForcingProbStart=0.9, teacherForcingProbEnd=0.0, eta_lr=0.001): # 0.001 ok
-        print('--- Starting Training (nE=' + str(nEpochs) + ',eL=' + str(epochLen) + ') ---')
+            nEpochs=30000, epochLen=100, validateEvery=100, vbs=2000, noiseSigma=0.01,
+            teacherForcingProbStart=0.99, teacherForcingProbEnd=-1.0, eta_lr=0.00035): # 
+        print('--- Starting Training (nE=' + str(nEpochs) + ', eL=' + str(epochLen) + ') ---')
         optimizer = optim.Adam(self.parameters(), lr = eta_lr)
         lossf = nn.CrossEntropyLoss()
         ns, na, tenv = self.stateSize, self.actionSize, trainSeq.env
@@ -83,22 +84,29 @@ class ForwardModelLSTM_SD(nn.Module):
             train_x, train_y = trainSeq.getRandomMinibatch(epochLen)
             # TODO sigma noise for actions?!?!
             lossTotal = 0.0
+            loss = 0.0
             currTeacherProb = teacherForcingProb(float(epoch) / nEpochs)
+            if currTeacherProb < 0.0: currTeacherProb = 0.0
             for seq_x, label_y in zip(train_x, train_y):
                 seq_x = avar(torch.FloatTensor(seq_x), requires_grad=False)
                 label_y = avar(torch.LongTensor(label_y), requires_grad=False)
                 useTeacherForcing = r.random() < currTeacherProb
-                outputs, hidden = self.forward(seq_x, None, useTeacherForcing)
-                loss = lossf(outputs.squeeze(1), label_y)
-                lossTotal += loss.data[0]
+                outputs, hidden = self.forward(seq_x, hidden=None, force=useTeacherForcing)
+                # Only compute error wrt the last state
+                #currLoss = lossf(outputs[-1,:],label_y[-1])
+                # Compute error across trajectory
+                currLoss = lossf(outputs.squeeze(1), label_y) 
+                loss += currLoss                
+                lossTotal += currLoss 
                 # Back-propagation
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad()
+            loss = loss / epochLen
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
             if epoch % validateEvery == 0:
                 print(' (p_tf = ' + '%.2f' % (currTeacherProb) + ')',end='')
-                print(" -> AvgLoss",'%.4f' % (lossTotal / epochLen),end=', ')
-                print('Val Loss: ',end='')
+                print(" -> TL",'%.4f' % (lossTotal / epochLen),end=', ')
+                print('VL: ',end='')
                 vx, vy = validSeq.getRandomMinibatch(vbs)
                 lossc, acc = 0.0, 0.0
                 for valid_x, valid_y in zip(vx, vy):
@@ -106,12 +114,12 @@ class ForwardModelLSTM_SD(nn.Module):
                     valid_y = avar(torch.LongTensor(valid_y), requires_grad=False)
                     teacherForced = False
                     outputs, hidden = self.forward(valid_x, None, teacherForced)
-                    lossc += lossf(outputs.squeeze(1), valid_y).data[0]
+                    lossc += lossf(outputs[-1,:],valid_y[-1]).data[0] # lossf(outputs.squeeze(1), valid_y).data[0]
                     finalOutput = outputs.squeeze(1)[-1]
                     outputInd = finalOutput.max(0)[1]
                     correct = outputInd.data[0] == valid_y[-1].data[0]
                     if correct: acc += 1.0
-                print('%.4f' % (lossc / vbs) + ', Val Acc:', '%.4f' % (acc / float(vbs)) )
+                print('%.4f' % (lossc / vbs) + ', VA:', '%.4f' % (acc / float(vbs)) )
                 # Save model
                 if not modelFilenameToSave is None:
                     torch.save(self.state_dict(), modelFilenameToSave)
@@ -163,7 +171,6 @@ class HenaffPlanner():
             eta=0.03,            # The learning rate given to ADAM
             noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
             niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
-            useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
             verbose=False,       # Specifies verbosity
             extraVerbose=False,  # Specifies extra verbosity
             useGumbel=True,      # Whether to use Gumbel-Softmax in the action sampling
@@ -210,7 +217,11 @@ class HenaffPlanner():
 
             # Run through the lstm forward model
             outputs, hidden = self.f.runOnActionSequence(currState,a_t_input,hidden=None)
-            finalOutput = output[-1]
+            finalOutput = outputs[-1]
+
+            print(finalOutput)
+            print(finalOutput.max())
+            print('---')
 
             # Now have final (predicted) result of action sequence
             # Compute the loss via the holder (power) mean of the CE losses
@@ -218,11 +229,19 @@ class HenaffPlanner():
             lossce2 = lossf( finalOutput , g_states[1] )
             lossce3 = lossf( finalOutput , g_states[2] )
             lossce4 = lossf( finalOutput , g_states[3] )
-            lossce = (( lossce1.pow(holder_power) + 
-                        lossce2.pow(holder_power) + 
-                        lossce3.pow(holder_power) + 
-                        lossce4.pow(holder_power) ) / 4.0 
-                     ).pow(1.0 / holder_power)
+            useMin = True
+            if useMin:
+                lossList = torch.cat([lossce1, lossce2, lossce3, lossce4]) 
+                print( lossList )
+                print( lossList.shape )
+                losses = lossList #torch.FloatTensor( lossList )
+                lossce = torch.min( losses )
+            else:
+                lossce = (( lossce1.pow(holder_power) + 
+                            lossce2.pow(holder_power) + 
+                            lossce3.pow(holder_power) + 
+                            lossce4.pow(holder_power) ) / 4.0 
+                        ).pow(1.0 / holder_power)
             # Entropy penalty
             H = -torch.sum( torch.sum( a_t*torch.log(a_t) , dim = 1 ) )
             # Final loss function 
@@ -243,16 +262,18 @@ class HenaffPlanner():
 def main():
 
     ####### Settings #######
-    preloadModel = True
-    runTraining = False      # Task 1
-    testHenaff = True       # Task 2
+    preloadModel = False
+    runTraining = True          # Task 1
+    testHenaff = False          # Task 2
+    testFM = False              # Task 3
+    henaffHyperSearch = False   # Task 4
     ########################
 
     ############################ External Files ############################
     ts = "navigation-data-train-sequence-singularDiscrete.pickle"
     vs = "navigation-data-test-sequence-singularDiscrete.pickle"
-    f_model_name_to_preload = 'forward-lstm-singDisc-2.pt'    
-    f_model_name_to_save = 'forward-lstm-singDisc-2.pt'   # For training
+    f_model_name_to_preload = 'forward-lstm-singDisc-9-LessTF-2.pt'    
+    f_model_name_to_save = 'forward-lstm-singDisc-TF0-ns-1.pt'    # For training
     ########################################################################
 
     # Define shell environment and empty forward model
@@ -271,15 +292,31 @@ def main():
             trainSeqs, 
             validSeqs, 
             modelFilenameToSave=f_model_name_to_save,
-            nEpochs=5000, 
-            epochLen=100, 
-            validateEvery=50, 
-            vbs=2500, 
-            noiseSigma=0.01, # Note: does nothing
-            teacherForcingProbStart=0.1, 
-            teacherForcingProbEnd=0.0, 
-            eta_lr=0.001
+            noiseSigma=0.01 # Note: does nothing
         )
+
+    if testFM:
+        # Start Location
+        start_px = 1
+        start_py = 1
+        start_orien = 0
+        start_state = exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien)
+        # Actions
+        actions = np.zeros((5,10))
+        actions[ 0, 8 ] = 1.0
+        actions[ 1, 7 ] = 1.0
+        actions[ 2, 2 ] = 1.0
+        actions[ 3, 7 ] = 1.0
+        actions[ 4, 8 ] = 1.0
+        actions = avar( torch.FloatTensor( actions ) )
+        #print(actions)
+        #print(actions[0])
+        # Get Prediction
+        start_state = avar( torch.FloatTensor( start_state ) )
+        outputs, hidden = f.runOnActionSequence(start_state.unsqueeze(0), actions, hidden=None)
+        finalOutput = outputs[-1]
+        print(finalOutput.max()) 
+        print('Pred final state',f.env.singularDiscreteStateToInts(finalOutput.data.numpy()[0]))
 
     #
     if testHenaff:
@@ -289,20 +326,18 @@ def main():
         start_orien = 0
         start_state = exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien)
         goal_state = [0,2]
+        maxNumActions = 2
         print('Building planner')
-        planner = HenaffPlanner(f, maxNumActions=2)
+        planner = HenaffPlanner(f, maxNumActions=maxNumActions)
         print('Starting generation')
         actions = planner.generatePlan(
             start_state,         # The starting state of the agent (one-hot singDisc)
             goal_state,          # The goal state of the agent as two ints (e.g. [gx,gy])
             eta=0.01,            # The learning rate given to ADAM
-            noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
-            niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
-            useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
-            verbose=False,       # Specifies verbosity
-            extraVerbose=False,  # Specifies extra verbosity
-            useGumbel=False,     # Whether to use Gumbel-Softmax in the action sampling
-            temp=0.01,           # The temperature of the Gumbel-Softmax method
+            noiseSigma=0.25,     # Noise strength on inputs. Overwrites the default setting from the init
+            niters=100,         # Number of optimization iterations. Overwrites the default setting from the init
+            useGumbel=True,     # Whether to use Gumbel-Softmax in the action sampling
+            temp=1.0,           # The temperature of the Gumbel-Softmax method
             lambda_h=0.0         # Specify the strength of entropy regularization (negative values encourage entropy)
         )
         print('START STATE:', start_px, start_py, start_orien)
@@ -318,133 +353,16 @@ def main():
         pred_orien = NavigationTask.oriens[ np.argmax(state[2:6]) ]
         print('PREDICTED FINAL STATE:',pred_x,pred_y,pred_orien)
 
-
-########################################################################################################
-########################################################################################################
-def mainOld():
-
-    ####################################################
-    useFFANN = True
-    trainingFFANN = False # 1
-    henaffHyperSearch = False # 4
-    runHenaffFFANN = False # 5
-    manualTest = False # 2
-    ####################################################
-
-    if len(sys.argv) > 1:
-        if sys.argv[1] == '1': trainingFFANN = True
-        if sys.argv[1] == '2': manualTest = True
-        if sys.argv[1] == '3': autoTest = True
-        if sys.argv[1] == '4': henaffHyperSearch = True
-        if sys.argv[1] == '5': runHenaffFFANN = True
-
-    if useFFANN:
-
-        f_model_name = 'forward-ffann-singDisc-noisy-2.pt' 
-        exampleEnv = NavigationTask()
-        f = ForwardModelFFANN(exampleEnv)
-
-        ################################################################################################################
-        if trainingFFANN:
-            ############
-            ts = "navigation-data-train-single-singularDiscrete.pickle"
-            vs = "navigation-data-test-single-singularDiscrete.pickle"
-            preload_name = None
-            saveName = 'forward-ffann-singDisc-noisy-3.pt'
-            ############
-            print('Reading Data')
-            with open(ts,'rb') as inFile:
-                print('\tReading',ts); trainSet = pickle.load(inFile)
-            with open(vs,'rb') as inFile:
-                print('\tReading',vs); validSet = pickle.load(inFile)
-            if not preload_name is None:
-                print('Loading from',f_model_name)
-                f.load_state_dict( torch.load(f_model_name) )
-            f.runTraining(trainSet,validSet,maxIters=50000,modelFilenameToSave=saveName,testEvery=100)
-
-        if manualTest: # 2
-            print('Loading from',f_model_name)
-            f.load_state_dict( torch.load(f_model_name) )
-            print('Environment states')
-            ###
-            start_px = 7
-            start_py = 9
-            start_orien = 1
-            action = [5,1,5]  
-            ###
-            cstate = avar(torch.FloatTensor( exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien) )).unsqueeze(0)
-            for act in action:
-                action1h = avar(torch.FloatTensor( exampleEnv._intToOneHot(act, 10) )).unsqueeze(0)
-                inputVal = torch.cat([cstate, action1h], dim=1) 
-                cstate = f.forward( inputVal )
-            print(cstate)
-            print( "sx,sy,sorien =", start_px,',',start_py,',',start_orien )
-            print( "As =", ",".join([NavigationTask.actions[a] for a in action]) )
-            print( "px,py,orien =", f.env.singularDiscreteStateToInts( cstate.squeeze(0).data.numpy() ))
-            
-
-        ################################################################################################################
-        if runHenaffFFANN: # 5
-            print('Loading from',f_model_name)
-            f.load_state_dict( torch.load(f_model_name) )
-            print('Environment states')
-            start_px = 0
-            start_py = 0
-            start_orien = 0
-            start_state = exampleEnv.singularDiscreteStateFromInts(start_px,start_py,start_orien)
-            goal_state = [0,2]
-            print('Building planner')
-            planner = HenaffPlanner(f, maxNumActions=2)
-            print('Starting generation')
-            actions = planner.generatePlan(
-                start_state,         # The starting state of the agent (one-hot singDisc)
-                goal_state,          # The goal state of the agent as two ints (e.g. [gx,gy])
-                eta=0.01,            # The learning rate given to ADAM
-                noiseSigma=None,     # Noise strength on inputs. Overwrites the default setting from the init
-                niters=None,         # Number of optimization iterations. Overwrites the default setting from the init
-                useCE=False,         # Specifies use of the cross-entropy loss, taken over subvectors of the state
-                verbose=False,       # Specifies verbosity
-                extraVerbose=False,  # Specifies extra verbosity
-                useGumbel=False,      # Whether to use Gumbel-Softmax in the action sampling
-                temp=0.01,           # The temperature of the Gumbel-Softmax method
-                lambda_h=0.0         # Specify the strength of entropy regularization (negative values encourage entropy)
-            )
-            print('START STATE:', start_px, start_py, start_orien)
-            print('FINAL ACTIONS:', ", ".join([str(a)+' ('+NavigationTask.actions[a]+')' for a in actions]))
-            print('GOAL STATE:', goal_state)
-            newEnv = NavigationTask(
-                agent_start_pos=[np.array([start_px,start_py]),NavigationTask.oriens[start_orien]],
-                goal_pos=np.array(goal_state))
-            for action in actions: newEnv.performAction(action)
-            state = newEnv.getStateRep(oneHotOutput=False)
-            pred_x = state[0]
-            pred_y = state[1]
-            pred_orien = NavigationTask.oriens[ np.argmax(state[2:6]) ]
-            print('PREDICTED FINAL STATE:',pred_x,pred_y,pred_orien)
-
-        ################################################################################################################
-        if henaffHyperSearch:
+    if henaffHyperSearch:
             print('Loading ',f_model_name)
             f.load_state_dict( torch.load(f_model_name) )
             
             ##################### Hyper-params #####################
-            # lambda_hs = [0.0,0.01,-0.01,0.05,-0.05,0.005,-0.005]            # Entropy strength
-            # etas = [0.5,0.25,0.1,0.05,0.025,0.01,0.005,0.001,0.0005]        # Learning rate
-            # useGumbels = [True,False]                                       # Whether to use Gumbel-softmax
-            # temperatures = [0.1,0.01,0.001,1.0]                             # Temperature for Gumbel-softmax
-            # noiseSigmas = [0.0,0.01,0.02,0.05,0.1,0.25,0.5,0.75,1.0,1.25]   # Noise strength on input
-            ## Init try
-            # lambda_hs = [0.0,0.005,-0.005]                                  # Entropy strength
-            # etas = [0.5,0.25,0.1,0.05,0.025,0.01,0.005,0.001,0.0005]        # Learning rate
-            # useGumbels = [True,False]                                       # Whether to use Gumbel-softmax
-            # temperatures = [0.1,0.01,0.001]                             # Temperature for Gumbel-softmax
-            # noiseSigmas = [0.0,0.05,0.1,0.5,1.0]   # Noise strength on input
-            ## Only use ones with decent results
-            lambda_hs = [0.0,-0.005]                                  # Entropy strength
+            lambda_hs = [0.0,-0.005]           # Entropy strength
             etas = [0.5,0.25,0.1,0.005]        # Learning rate
-            useGumbels = [True,False]                                       # Whether to use Gumbel-softmax
-            temperatures = [0.1,0.001]                             # Temperature for Gumbel-softmax
-            noiseSigmas = [0.5,1.0]   # Noise strength on input
+            useGumbels = [True,False]          # Whether to use Gumbel-softmax
+            temperatures = [0.1,0.001]         # Temperature for Gumbel-softmax
+            noiseSigmas = [0.5,1.0]            # Noise strength on input
             ########################################################
 
             ###### Settings ######
