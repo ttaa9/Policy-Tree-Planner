@@ -51,7 +51,18 @@ class NavigationTask(SimpleGridTask):
         self.max_num_steps = maxSteps
         # Number of one-hot subvectors of the concatenated state vector
         # Agent pos + orien & goal pos
-        self.stateSubVectors = 2 + 1 + 2       
+        self.stateSubVectors = 2 + 1 + 2
+
+    def printState(self,s,pre=''):
+        trueInds = self.env.singularDiscreteStateToInts(s)
+        print(str(pre) + 'px:',    trueInds[0])
+        print(str(pre) + 'py:',    trueInds[1])
+        print(str(pre) + 'orien:', trueInds[2],'(',self.env.oriens[trueInds[2]],')')
+
+    def printAction(self,a,pre=''):
+        if type(a) is avar: ind = np.argmax(a.data.numpy())
+        else: ind = np.argmax(a)
+        print(str(pre)+'a:',self.env.actions[ind],'('+str(ind)+')')
 
     def randomize(self,changeGoal=False):
         px = npr.randint(0,self.w,1)[0]
@@ -93,7 +104,7 @@ class NavigationTask(SimpleGridTask):
         if distance_based:
             state = self.getStateRep(oneHotOutput=False)
             d = abs(state[0] - state[-2]) + abs(state[1] - state[-1])
-            r = 1.0 /(1.0 + d) 
+            r = 1.0 /(1.0 + d)
             return r
         atReward = self.goal_pos[0]==self.agent_pos[0] and self.goal_pos[1]==self.agent_pos[1]
         return 1 if atReward else 0
@@ -113,7 +124,7 @@ class NavigationTask(SimpleGridTask):
            p = np.zeros(8) # pos_x, pos_y, one_hot_orien, goal_x, goal_y
            p[0:2] = copy.copy(self.agent_pos) # position as two integers in [0,w-1],[0,h-1] resp
            p[2 + self.agent_orientation] = 1 # orientation as one-hot
-           p[-2:] = copy.copy(self.goal_pos) # goal pos as two integers 
+           p[-2:] = copy.copy(self.goal_pos) # goal pos as two integers
         return p # Env state
 
     def getSingularDiscreteState(self):
@@ -230,7 +241,7 @@ class NavigationTask(SimpleGridTask):
         data_x, data_y = [], []
         numActions = len(NavigationTask.actions)
         env = NavigationTask(width=width, height=height, track_history=True, stochasticity=stochasticity)
-        asIntArray = lambda s: np.array([np.argmax(s)]) 
+        asIntArray = lambda s: np.array([np.argmax(s)])
         for point in range(0,npoints):
             env.randomize()
             s0_large = env.getSingularDiscreteState()
@@ -238,12 +249,12 @@ class NavigationTask(SimpleGridTask):
             action = npr.randint(0,numActions)
             env.performAction(action)
             s1_large = env.getSingularDiscreteState()
-            s1_ind = asIntArray(s1_large) 
+            s1_ind = asIntArray(s1_large)
             oha = env._intToOneHot(action,numActions)
             x_input = np.concatenate( (s0_ind, oha) )
             data_x.append( x_input )
             data_y.append( s1_ind )
-            if point % printEvery == 0: 
+            if point % printEvery == 0:
                 print('\tOn point',point)
         return [np.array(data_x), np.array(data_y)]
 
@@ -253,7 +264,7 @@ class NavigationTask(SimpleGridTask):
         data_x, data_y = [], []
         numActions = len(NavigationTask.actions)
         env = NavigationTask(width=width, height=height, track_history=True, stochasticity=stochasticity)
-        asIntArray = lambda s: np.array([np.argmax(s)]) 
+        asIntArray = lambda s: np.array([np.argmax(s)])
         for point in range(0,nseqs):
             # Randomize the environment
             env.randomize()
@@ -286,7 +297,7 @@ class NavigationTask(SimpleGridTask):
             # Save the sequence input and output
             data_x.append( x_sequence )
             data_y.append( y_sequence )
-            if point % printEvery == 0: 
+            if point % printEvery == 0:
                 print('\tOn point',point)
         return [np.array(data_x), np.array(data_y)]
 
@@ -381,6 +392,3 @@ def navmain():
 
 if __name__ == '__main__':
     navmain()
-
-
-
