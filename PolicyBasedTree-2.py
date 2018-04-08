@@ -118,7 +118,6 @@ class SimulationPolicy(nn.Module):
         b_gumbeled_gsh = gumbel_softmax_hard(b_ann_logsoft, branching_temperature)#.type(torch.LongTensor)
         b_gumbeled = b_gumbeled_gsh.type(torch.LongTensor)
         if verbose: print('BG',b_gumbeled)
-        #print('SHAPES',self.intvec.shape,b_gumbeled)
         branchingRateSample = torch.dot(self.intvec, b_gumbeled)
         if verbose: print('BRS',branchingRateSample)
         return gumbeled_action, soft_action, branchingRateSample
@@ -155,7 +154,6 @@ class SimulationPolicy(nn.Module):
                 alpha=alpha, lambda_h=lambda_h, useHolder=useHolder, 
                 holderp=holderp, useOnlyLeaves=useOnlyLeaves, gamma=gamma
             )
-            # print(i,'loss',loss)
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -242,9 +240,6 @@ class Tree(object):
         if verbose: print('Grow depth: ',d)
         if verbose: self.env.printState(node.state[0].data.numpy())
         if d == self.maxDepth : return node
-        # if not type(b) is int:
-        #     b = b.data.numpy()[0]
-        #     print('b',b)
         if type(b) is int: b = avar(torch.LongTensor([b]))
         i = 0
         while (i < b.data).all():
@@ -286,20 +281,12 @@ class Tree(object):
     def getBestPlan(self):
         bestInd, bestVal = 0, avar(torch.FloatTensor( [float('inf')])) #float('-inf')\n",
         for i, node in enumerate(self.allNodes):
-            currVal = node.loss #self.valueF(leaf.state)\n",
-            # print('cv',i,':',currVal)
-            #print('State')\n",
-            #self.forwardModel.printState(leaf.state[0])\n",
-            #print('Value',currVal)\n",
+            currVal = node.loss 
             if currVal.data.numpy() < bestVal.data.numpy():
                 bestInd = i
                 bestVal = currVal
-        # print("index",bestInd)
         return self.getPathFromNode( bestInd )
         
-
-    # TODO add a loss relating to the branching factor ?!?!
-
     def getLossFromAllNodes(self, alpha=0.5, lambda_h=-0.025, useHolder=False, holderp=-5.0, useOnlyLeaves=False, gamma=0.01):
         targetNodes = self.allNodes
         if useOnlyLeaves: targetNodes = self.leaves
@@ -308,9 +295,7 @@ class Tree(object):
         totalBranching    = avar(torch.FloatTensor([0.0]))
         if not useHolder: holderp = 1.0
         nNodes = len(targetNodes)
-        # print('N_NODES',nNodes)
         for i, node in enumerate(targetNodes):
-            # print('NBB',node.branchingBreadth)
             if i == 0: 
                 node.loss = avar(torch.FloatTensor( [float('inf')] ))
                 continue
@@ -320,9 +305,9 @@ class Tree(object):
             totalInverseValue += node.loss.pow( holderp )
             if not node.action is None:
                 totalEntropy += -torch.sum(node.action[0] * torch.log(node.action[0]))
-        # print('TIV',totalInverseValue)
-        # print('TBF', totalBranching)
+        # Penalize negative reward and entropy
         totalLosses = alpha * (totalInverseValue / nNodes).pow(1.0 / holderp) + lambda_h * totalEntropy
+        # Penalize too many branches
         totalLosses += gamma * totalBranching / nNodes
         return totalLosses 
 
@@ -354,7 +339,7 @@ def main():
     ForwardModel = LSTMForwardModel(train.lenOfInput,train.lenOfState)
     ForwardModel.load_state_dict( torch.load(f_model_name) )
     # Initialize forward policy
-    exampleEnv = generateTask(0,0,0,3,0)
+    exampleEnv = generateTask(0,0,0,3,0) # This takes about 10 sec to train & solve on my comp
     SimPolicy = SimulationPolicy(exampleEnv)
     # Run training
     if runTraining:
@@ -370,7 +355,8 @@ def main():
             lambda_h=-0.025,
             useHolder=True,
             holderp=-6.0, 
-            useOnlyLeaves=False
+            useOnlyLeaves=False, 
+            gamma=0.01
         )
          
         # 
