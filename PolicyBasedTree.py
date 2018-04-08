@@ -262,3 +262,6 @@ def main():
     states, actions = tree.getBestPlan()
     for i in range(len(actions)):
         print(actions[i][0].data.numpy().argmax())
+
+
+main()
