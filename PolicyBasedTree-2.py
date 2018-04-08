@@ -32,6 +32,20 @@ def gumbel_softmax(logits, temperature):
     y_hard.scatter_(1, ind.view(-1, 1), 1)
     y_hard = y_hard.view(*shape)
     return y #+ (y_hard - y).detach() 
+
+def gumbel_softmax_hard(logits, temperature):
+    """
+    input: [*, n_class]
+    return: [*, n_class] an one-hot vector
+    """
+    y = gumbel_softmax_sample(logits, temperature)
+    shape = y.size()
+    _, ind = y.max(dim=-1)
+    y_hard = torch.zeros_like(y).view(-1, shape[-1])
+    y_hard.scatter_(1, ind.view(-1, 1), 1)
+    y_hard = y_hard.view(*shape)
+    return y + (y_hard - y).detach() 
+
 ##############################################
 
 
@@ -71,28 +85,44 @@ def generateTask(px,py,orien,gx,gy):
     return env
 
 class SimulationPolicy(nn.Module):
-    def __init__(self,  env, layerSizes=[100,100]):
+    def __init__(self,  env, layerSizes=[100,100], maxBranchingFactor=3):
         super(SimulationPolicy, self).__init__()
         self.actionSize = len(env.actions)
         self.stateSize = len(env.getStateRep(oneHotOutput=True))
         self.env = env
-        print("State Size: " , self.stateSize)
-        print("Action Size: ", self.actionSize)
-        
+        self.maxBranchingFactor = maxBranchingFactor
+        self.intvec = avar( torch.LongTensor(list(range(maxBranchingFactor + 1))) ).unsqueeze(0)
+        print("State Size: " , self.stateSize, "\nAction Size: ", self.actionSize)
         # Input space: [Batch, observations], output:[Batch, action_space]
         self.layer1 = nn.Linear(self.stateSize, layerSizes[0])
         self.layer2 = nn.Linear(layerSizes[0], layerSizes[1])
         self.layer3 = nn.Linear(layerSizes[1], self.actionSize)
+        # Layer to sample branching factor
+        self.intSamplingLayer = nn.Linear(layerSizes[1], self.maxBranchingFactor + 1)
         
-    def sample(self,state,temperature=2):
-        output = F.relu( self.layer1(state) )
-        output = F.relu( self.layer2(output) ) # F.sigmoid
-        output = self.layer3(output)
-        #print(output.shape)
+    def sample(self,state,temperature=2,branching_temperature=1,verbose=False):
+        # Compute action output
+        output1 = F.relu( self.layer1(state) )
+        output2 = F.relu( self.layer2(output1) ) # F.sigmoid
+        output = self.layer3(output2)
+        # Process action
         soft_output = F.softmax(output, dim=1)
         m = nn.LogSoftmax(dim=1)
         output = m(output)
-        return gumbel_softmax(output, temperature), soft_output
+        # Use Gumbel-Softmax 
+        gumbeled_action, soft_action = gumbel_softmax(output, temperature), soft_output
+        # Sample the branching factor
+        b_ann = self.intSamplingLayer(output2)
+        b_ann_logsoft = m(b_ann)
+        if verbose: print('BAL',b_ann_logsoft)
+        b_gumbeled_gsh = gumbel_softmax_hard(b_ann_logsoft, branching_temperature)#.type(torch.LongTensor)
+        b_gumbeled = b_gumbeled_gsh.type(torch.LongTensor)
+        if verbose: print('BG',b_gumbeled)
+        #print('SHAPES',self.intvec.shape,b_gumbeled)
+        branchingRateSample = torch.dot(self.intvec, b_gumbeled)
+        if verbose: print('BRS',branchingRateSample)
+        return gumbeled_action, soft_action, branchingRateSample
+
     
     def forward(self, state):
         output = F.relu( self.layer1(state) )
@@ -113,7 +143,8 @@ class SimulationPolicy(nn.Module):
         lambda_h=-0.025,
         useHolder=False,
         holderp=-6.0, 
-        useOnlyLeaves=False
+        useOnlyLeaves=False, 
+        gamma=0.01
         ):
         optimizer = optim.Adam(self.parameters(), lr = eta_lr )
         for p in forwardModel.parameters(): p.requires_grad = False
@@ -122,7 +153,7 @@ class SimulationPolicy(nn.Module):
             tree = Tree(s0, forwardModel, self,greedy_valueF, self.env, maxDepth, treeBreadth)
             loss = tree.getLossFromAllNodes(
                 alpha=alpha, lambda_h=lambda_h, useHolder=useHolder, 
-                holderp=holderp, useOnlyLeaves=useOnlyLeaves
+                holderp=holderp, useOnlyLeaves=useOnlyLeaves, gamma=gamma
             )
             # print(i,'loss',loss)
             loss.backward()
@@ -130,6 +161,7 @@ class SimulationPolicy(nn.Module):
             optimizer.zero_grad()
             if i % 50 == 0: 
                 print('Loss',i,":",loss.data[0])
+                print('NumTreeNodes:', len(tree.allNodes))
                 if printActions:
                     plan = tree.getBestPlan()
                     # print(plan)
@@ -151,6 +183,7 @@ class Node(object):
         self.action = action
         self.hidden = hidden
         self.sampledAction = sampledAction
+        self.branchingBreadth = None
         
     def addChild(self, child):
         self.children.append(child)
@@ -209,9 +242,14 @@ class Tree(object):
         if verbose: print('Grow depth: ',d)
         if verbose: self.env.printState(node.state[0].data.numpy())
         if d == self.maxDepth : return node
-        for i in range(b):
+        # if not type(b) is int:
+        #     b = b.data.numpy()[0]
+        #     print('b',b)
+        if type(b) is int: b = avar(torch.LongTensor([b]))
+        i = 0
+        while (i < b.data).all():
             # Sample the current action
-            hard_action, soft_a_s = self.simPolicy.sample(node.state)
+            hard_action, soft_a_s, new_branching_breadth = self.simPolicy.sample(node.state)
             a_s =  [torch.squeeze(hard_action)]
             inital_state =  torch.squeeze(node.state)
             self.forwardModel.setHiddenState(node.hidden)
@@ -230,7 +268,9 @@ class Tree(object):
                 self.env.printState(current_state[0].data.numpy())
             childNode = Node(node, current_state, [soft_a_s], [hard_action], current_hidden)
             self.allNodes.append( childNode )
-            node.addChild( self.grow( childNode, d+1, b) )
+            childNode.branchingBreadth = new_branching_breadth
+            node.addChild( self.grow( childNode, d + 1, new_branching_breadth) )
+            i += 1
         return node
     
     #
@@ -257,24 +297,33 @@ class Tree(object):
         # print("index",bestInd)
         return self.getPathFromNode( bestInd )
         
-    def getLossFromAllNodes(self, alpha=0.5, lambda_h=-0.025, useHolder=False, holderp=-5.0, useOnlyLeaves=False):
+
+    # TODO add a loss relating to the branching factor ?!?!
+
+    def getLossFromAllNodes(self, alpha=0.5, lambda_h=-0.025, useHolder=False, holderp=-5.0, useOnlyLeaves=False, gamma=0.01):
         targetNodes = self.allNodes
         if useOnlyLeaves: targetNodes = self.leaves
         totalInverseValue = avar(torch.FloatTensor([0.0]))
         totalEntropy      = avar(torch.FloatTensor([0.0]))
+        totalBranching    = avar(torch.FloatTensor([0.0]))
         if not useHolder: holderp = 1.0
         nNodes = len(targetNodes)
         # print('N_NODES',nNodes)
         for i, node in enumerate(targetNodes):
+            # print('NBB',node.branchingBreadth)
             if i == 0: 
-                node.loss = avar(torch.FloatTensor( [float('inf')]))
+                node.loss = avar(torch.FloatTensor( [float('inf')] ))
                 continue
+            if not node.branchingBreadth is None:
+                totalBranching += node.branchingBreadth.type(torch.FloatTensor) # IGNORES PARENT TODO
             node.loss = -self.valueF( node.state )
             totalInverseValue += node.loss.pow( holderp )
             if not node.action is None:
                 totalEntropy += -torch.sum(node.action[0] * torch.log(node.action[0]))
         # print('TIV',totalInverseValue)
+        # print('TBF', totalBranching)
         totalLosses = alpha * (totalInverseValue / nNodes).pow(1.0 / holderp) + lambda_h * totalEntropy
+        totalLosses += gamma * totalBranching / nNodes
         return totalLosses 
 
     # Call before getting best plan
@@ -319,7 +368,7 @@ def main():
             trainIters=500,
             alpha=0.5,
             lambda_h=-0.025,
-            useHolder=False,
+            useHolder=True,
             holderp=-6.0, 
             useOnlyLeaves=False
         )
