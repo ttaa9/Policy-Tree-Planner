@@ -43,7 +43,8 @@ class ForwardModelLSTM_SD(nn.Module):
     def step(self, inputVal, hidden=None):
         newIn = self.embed(inputVal.view(1, -1)).unsqueeze(1)
         output, hidden = self.lstm(newIn, hidden)
-        output = self.hiddenToState(output.squeeze(1))
+        #output = output / torch.sqrt( torch.sum( output[0,:].pow(2) ) )
+        output = F.softmax( self.hiddenToState(output.squeeze(1)) )
         return output, hidden
 
     def forward(self, inputs, hidden=None, force=True, steps=0):
@@ -72,8 +73,8 @@ class ForwardModelLSTM_SD(nn.Module):
         return outputs, hidden 
 
     def runTraining(self, trainSeq, validSeq, modelFilenameToSave=None,
-            nEpochs=1000, epochLen=150, validateEvery=25, vbs=3000, noiseSigma=0.01,
-            teacherForcingProbStart=0.5, teacherForcingProbEnd=0.5, eta_lr=0.001): # 
+            nEpochs=20000, epochLen=150, validateEvery=25, vbs=3000, noiseSigma=0.01,
+            teacherForcingProbStart=0.5, teacherForcingProbEnd=0.5, eta_lr=0.0005): # 
         print('--- Starting Training (nE=' + str(nEpochs) + ', eL=' + str(epochLen) + ') ---')
         optimizer = optim.Adam(self.parameters(), lr = eta_lr)
         lossf = nn.CrossEntropyLoss()
@@ -271,8 +272,8 @@ def main():
     ############################ External Files ############################
     ts = "navigation-data-train-sequence-singularDiscrete.pickle"
     vs = "navigation-data-test-sequence-singularDiscrete.pickle"
-    f_model_name_to_preload = 'forward-lstm-singDisc-scratch-noSoftMax-1.pt'    
-    f_model_name_to_save = 'forward-lstm-singDisc-scratch-noSoftMax-2.pt'    # For training
+    f_model_name_to_preload = 'forward-lstm-singDisc-scratch-pt0d5-3.pt'    
+    f_model_name_to_save =    'forward-lstm-singDisc-scratch-pt0d5-4.pt'    # For training
     ########################################################################
 
     # Define shell environment and empty forward model
@@ -291,8 +292,7 @@ def main():
         f.runTraining(
             trainSeqs, 
             validSeqs, 
-            modelFilenameToSave=f_model_name_to_save,
-            noiseSigma=0.01 # Note: does nothing
+            modelFilenameToSave=f_model_name_to_save
         )
 
     if testFM:
