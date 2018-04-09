@@ -335,6 +335,26 @@ class NavigationTask(SimpleGridTask):
         data_x, data_y = zip(*combined)
         return [np.array(data_x), np.array(data_y)]
 
+    def generateStateToRewardData(numDataPoints=800000,width=15,height=15,stochasticity=0.0,data_rebalance=0.1):
+        data_x, data_y = [], []
+        totRewardSeen = 0
+        for i in range(numDataPoints):
+            if i % 25000 == 0: print(i,'TR =',totRewardSeen)
+            # New environment with random goal
+            goal_pos = np.array([ npr.randint(0,width), npr.randint(0,height) ])
+            p_0 = np.array([npr.randint(0,width),npr.randint(0,height)])
+            if r.random() <= data_rebalance: # reduce class imbalance
+                p_0 = goal_pos
+            start_pos = [p_0, r.choice(NavigationTask.oriens)]
+            cenv = NavigationTask(width=width, height=height, agent_start_pos=start_pos, goal_pos=goal_pos,
+                track_history=True, stochasticity=stochasticity, maxSteps=None)
+            currReward = cenv.getReward()
+            totRewardSeen += currReward
+            currentState = cenv.getStateRep(oneHotOutput=True)
+            data_x.append( currentState )
+            data_y.append( currReward )
+        return [np.array(data_x), np.array(data_y)]    
+
 ######################################################################################################
 
 ### Testing ###
@@ -353,13 +373,13 @@ def navmain():
         print(thist[0:5])
         print('--')
         data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
-    if True:
+    if False:
         data = NavigationTask.generateRandomTrajectories(200,10,verbose=True,print_every=1000)
         toSave = [env,data]
         with open("navigation-data-train-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
-    if True:
+    if False:
         data = NavigationTask.generateRandomTrajectories(200,10,verbose=True,print_every=1000)
         toSave = [env,data]
         with open("navigation-data-test-small.pickle",'wb') as outFile:
@@ -396,6 +416,15 @@ def navmain():
         with open("navigation-data-test-sequence-singularDiscrete.pickle",'wb') as outFile:
             print('Saving test set'); pickle.dump(test,outFile)
 
+    if True:
+        print('Generating Training Data')
+        train = NavigationTask.generateStateToRewardData(numDataPoints=1000000)
+        with open("navigation-data--state_to_reward-train.pickle",'wb') as outFile:
+            print('Saving train set'); pickle.dump(train,outFile)
+        print('Generating Testing Data')
+        test = NavigationTask.generateStateToRewardData(numDataPoints=100000,data_rebalance=0.005)
+        with open("navigation-data-state_to_reward-valid.pickle",'wb') as outFile:
+            print('Saving test set'); pickle.dump(test,outFile)
 
 if __name__ == '__main__':
     navmain()
