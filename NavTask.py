@@ -353,12 +353,19 @@ def navmain():
         print(thist[0:5])
         print('--')
         data = NavigationTask.generateRandomTrajectories(50,10,verbose=True)
-    if False:
-        data = NavigationTask.generateRandomTrajectories(20000,10,verbose=True,print_every=1000)
+    if True:
+        data = NavigationTask.generateRandomTrajectories(200,10,verbose=True,print_every=1000)
         toSave = [env,data]
-        with open("navigation-data-train -small.pickle",'wb') as outFile:
+        with open("navigation-data-train-small.pickle",'wb') as outFile:
             print('Saving')
             pickle.dump(toSave,outFile)
+    if True:
+        data = NavigationTask.generateRandomTrajectories(200,10,verbose=True,print_every=1000)
+        toSave = [env,data]
+        with open("navigation-data-test-small.pickle",'wb') as outFile:
+            print('Saving')
+            pickle.dump(toSave,outFile)
+
     if False:
         print('Generating Training Data')
         train = NavigationTask.generateSingleStepData()
@@ -379,7 +386,7 @@ def navmain():
         with open("navigation-data-test-single-singularDiscrete.pickle",'wb') as outFile:
             print('Saving'); pickle.dump(test,outFile)
 
-    if True:
+    if False:
         print('Generating Training Data')
         train = NavigationTask.generateSingularDiscreteSequenceData(nseqs=500000)
         with open("navigation-data-train-sequence-singularDiscrete.pickle",'wb') as outFile:
