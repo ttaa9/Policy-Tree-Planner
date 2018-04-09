@@ -200,6 +200,8 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0):
         [3, generateTask(0,0,0,4,4)],
         [4, generateTask(0,0,0,4,8)],
         [5, generateTask(0,0,0,7,7)],
+        [6, generateTask(0,0,0,10,12)],
+        [7, generateTask(0,0,0,14,14)],
     ]
     # Choose dist type
     if distType == 0:   useCE = False; intDist = False
@@ -263,9 +265,6 @@ for lambda_h in lambda_hs:
                         acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,temp,distType=distType)
                         acc=acc/trials
                         hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
-                        if cp%10:
-                            with open('hyperparam_search_henaff.pickle', 'wb') as handle:
-                                pickle.dump(hyperparam_output, handle, protocol=pickle.HIGHEST_PROTOCOL)
                     else: 
                         ps = str(cp) + '/' + str(N_p)
                         acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,distType=distType)
@@ -273,7 +272,7 @@ for lambda_h in lambda_hs:
                         hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':None,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
     
                     cp += 1
-                    if cp%2:
+                    if cp%10:
                         with open('hyperparam_search_henaff.pickle', 'wb') as handle:
                             pickle.dump(hyperparam_output, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
