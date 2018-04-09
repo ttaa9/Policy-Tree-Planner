@@ -8,19 +8,18 @@ from TransportTask import TransportTask
 from NavTask import NavigationTask
 from SeqData import SeqData
 from LSTMFM import LSTMForwardModel
-
+import pdb
 import os, sys, pickle, numpy as np, numpy.random as npr, random as r
-
+import pickle
 
 f_model_name = 'LSTM_FM_1_99'    
 s = 'navigation' # 'transport'
 trainf, validf = s + "-data-train-small.pickle", s + "-data-test-small.pickle"
 print('Reading Data')
-train, valid = SeqData(trainf), SeqData(validf)
-
-fm = LSTMForwardModel(train.lenOfInput,train.lenOfState)
+#train, valid = SeqData(trainf), SeqData(validf)
+fm = LSTMForwardModel(74,64)
 fm.load_state_dict( torch.load(f_model_name) )
-
+fileToWriteTo='hyperparam_output'
 
 
 
@@ -153,36 +152,8 @@ class HenaffPlanner():
         # Return the final action sequence 
         return [ x.max(0)[1].data[0] for x in x_t ]
 
-env = NavigationTask()
 
-##################### Hyper-params #####################
-# lambda_hs = [0.0,0.01,-0.01,0.05,-0.05,0.005,-0.005]            # Entropy strength
-# etas = [0.5,0.25,0.1,0.05,0.025,0.01,0.005,0.001,0.0005]        # Learning rate
-# useGumbels = [True,False]                                       # Whether to use Gumbel-softmax
-# temperatures = [0.1,0.01,0.001,1.0]                             # Temperature for Gumbel-softmax
-# noiseSigmas = [0.0,0.01,0.02,0.05,0.1,0.25,0.5,0.75,1.0,1.25]   # Noise strength on input
-## Init try
-# lambda_hs = [0.0,0.005,-0.005]                                  # Entropy strength
-# etas = [0.5,0.25,0.1,0.05,0.025,0.01,0.005,0.001,0.0005]        # Learning rate
-# useGumbels = [True,False]                                       # Whether to use Gumbel-softmax
-# temperatures = [0.1,0.01,0.001]                             # Temperature for Gumbel-softmax
-# noiseSigmas = [0.0,0.05,0.1,0.5,1.0]   # Noise strength on input
-## Only use ones with decent results
-lambda_hs = [0.0,-0.005, 0.005]                                  # Entropy strength
-etas = [0.01,0.1,0.2,0.3,0.5, 1]        # Learning rate
-useGumbels = [True, False,False]                                       # Whether to use Gumbel-softmax
-temperatures = [0.02,0.1, 1, 10]                             # Temperature for Gumbel-softmax
-noiseSigmas = [0,0.01,0.1, 1.0,2.0]   # Noise strength on input
-########################################################
 
-###### Settings ######
-niters = 200
-verbose = False
-extraVerbose = False
-numRepeats = 10
-fileToWriteTo = 'hyper-param-results.txt' # Set to None to do no writing
-distType = 1 # 0 = MSE, 1 = CE, 2 = dist
-######################
 
 # Build an env with the given INT inputs
 def generateTask(px,py,orien,gx,gy):
@@ -192,17 +163,25 @@ def generateTask(px,py,orien,gx,gy):
     return env
 
 # Function for running a single suite of tests (on one hyper-param set)
-def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0):
+env = NavigationTask()
+
+def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', tasks=None, verbose=False,extraVerbose=False):
+
+    numRepeats=10
+    niters=100
+
     # Define tasks
-    tasks = [
-        [1, generateTask(0,0,0,0,5)],
-        [2, generateTask(0,0,0,0,7)],
-        [3, generateTask(0,0,0,4,4)],
-        [4, generateTask(0,0,0,4,8)],
-        [5, generateTask(0,0,0,7,7)],
-        [6, generateTask(0,0,0,10,12)],
-        [7, generateTask(0,0,0,14,14)],
-    ]
+    if tasks== None:
+        if difficulty=='Hard':
+
+            tasks = [[6, generateTask(0,0,0,10,12)],
+                [7, generateTask(0,0,0,14,14)]]
+
+        if difficulty=='Easy':
+
+            tasks = [[3, generateTask(0,0,0,4,4)],
+                [4, generateTask(0,0,0,4,8)]]
+
     # Choose dist type
     if distType == 0:   useCE = False; intDist = False
     elif distType == 1: useCE = True;  intDist = False
@@ -241,43 +220,53 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0):
 
     print(wstring)
     # Write output
-    if not fileToWriteTo is None:
-        with open(fileToWriteTo,'a') as filehandle:
-            filehandle.write( wstring + '\n' )
 
     return score, tot
 
 
-import pickle
 
 
-hyperparam_output=[]
+
 # Run tasks over all hyper-parameter settings
-N_p, cp = len(lambda_hs)*len(etas)*len(noiseSigmas)*(1 + len(temperatures)), 1
-for lambda_h in lambda_hs:
-    for eta in etas:
-        for noiseLevel in noiseSigmas:
-            for ug in useGumbels:          
-                for temp in temperatures:
-                    ps = str(cp) + '/' + str(N_p)
 
-                    if ug:    
-                        acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,temp,distType=distType)
-                        acc=acc/trials
-                        hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
-                    else: 
-                        ps = str(cp) + '/' + str(N_p)
-                        acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,distType=distType)
-                        acc=acc/trials
-                        hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':None,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+def hyperparam_search(lambda_hs=[0.0,-0.005, 0.005] ,
+                    etas = [0.01,0.1,0.2,0.3,0.5, 1],
+                    useGumbels = [True, False], 
+                    temperatures = [0.02,0.1, 1, 10],
+                    noiseSigmas = [0,0.01,0.1, 1.0,2.0],
+                    niters = 200,
+                    verbose = False,
+                    extraVerbose = False, 
+                    numRepeats = 10,
+                    file_name_output = 'hyperparam_search_henaff.pickle',
+                    distType = 1,
+                    difficulty='Easy'):
+
+    hyperparam_output=[]
     
-                    cp += 1
-                    if cp%10:
-                        with open('hyperparam_search_henaff.pickle', 'wb') as handle:
-                            pickle.dump(hyperparam_output, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
+    N_p, cp = len(lambda_hs)*len(etas)*len(noiseSigmas)*(1 + len(temperatures)), 1
+    for lambda_h in lambda_hs:
+        for eta in etas:
+            for noiseLevel in noiseSigmas:
+                for ug in useGumbels:          
+                    for temp in temperatures:
+                        ps = str(cp) + '/' + str(N_p)
 
-
+                        if ug:    
+                            acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,temp,distType=distType,difficulty=difficulty)
+                            acc=acc/trials
+                            hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+                        else: 
+                            ps = str(cp) + '/' + str(N_p)
+                            acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,distType=distType,difficulty=difficulty)
+                            acc=acc/trials
+                            hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':None,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+        
+                        cp += 1
+                        if cp%10:
+                            with open(file_name_output, 'wb') as handle:
+                                pickle.dump(hyperparam_output, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 
