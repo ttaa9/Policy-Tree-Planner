@@ -169,17 +169,17 @@ env = NavigationTask()
 # noiseSigmas = [0.0,0.05,0.1,0.5,1.0]   # Noise strength on input
 ## Only use ones with decent results
 lambda_hs = [0.0,-0.005, 0.005]                                  # Entropy strength
-etas = [0.2,0.3,1,0.1, 0.5]        # Learning rate
-useGumbels = [True, False]                                       # Whether to use Gumbel-softmax
-temperatures = [2,1, 10, 0.1,0.001]                             # Temperature for Gumbel-softmax
-noiseSigmas = [0.5,0.05, 1.0, 0.75]   # Noise strength on input
+etas = [0.01,0.1,0.2,0.3,0.5, 1]        # Learning rate
+useGumbels = [True, False,False]                                       # Whether to use Gumbel-softmax
+temperatures = [0.02,0.1, 1, 10]                             # Temperature for Gumbel-softmax
+noiseSigmas = [0,0.01,0.1, 1.0,2.0]   # Noise strength on input
 ########################################################
 
 ###### Settings ######
-niters = 150
+niters = 200
 verbose = False
 extraVerbose = False
-numRepeats = 5
+numRepeats = 10
 fileToWriteTo = 'hyper-param-results.txt' # Set to None to do no writing
 distType = 1 # 0 = MSE, 1 = CE, 2 = dist
 ######################
@@ -195,9 +195,11 @@ def generateTask(px,py,orien,gx,gy):
 def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0):
     # Define tasks
     tasks = [
-        [3, generateTask(0,0,0,5,5)],
-        [4, generateTask(5,5,1,0,9)],
-        [5, generateTask(3,2,2,7,7)],
+        [1, generateTask(0,0,0,0,5)],
+        [2, generateTask(0,0,0,0,7)],
+        [3, generateTask(0,0,0,4,4)],
+        [4, generateTask(0,0,0,4,8)],
+        [5, generateTask(0,0,0,7,7)],
     ]
     # Choose dist type
     if distType == 0:   useCE = False; intDist = False
@@ -233,24 +235,50 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0):
             tot += 1
             if correct: score += 1
     wstring += ' -> Score:' + str(score) + '/' + str(tot)
+
+
     print(wstring)
     # Write output
     if not fileToWriteTo is None:
         with open(fileToWriteTo,'a') as filehandle:
             filehandle.write( wstring + '\n' )
 
+    return score, tot
+
+
+import pickle
+
+
+hyperparam_output=[]
 # Run tasks over all hyper-parameter settings
 N_p, cp = len(lambda_hs)*len(etas)*len(noiseSigmas)*(1 + len(temperatures)), 1
 for lambda_h in lambda_hs:
     for eta in etas:
         for noiseLevel in noiseSigmas:
-            for ug in useGumbels:
-                if ug:
-                    for temp in temperatures: 
-                        ps = str(cp) + '/' + str(N_p)
-                        runTests(lambda_h,eta,noiseLevel,ug,ps,temp,distType=distType)
-                        cp += 1
-                else: 
+            for ug in useGumbels:          
+                for temp in temperatures:
                     ps = str(cp) + '/' + str(N_p)
-                    runTests(lambda_h,eta,noiseLevel,ug,ps,distType=distType)
+
+                    if ug:    
+                        acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,temp,distType=distType)
+                        acc=acc/trials
+                        hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+                        if cp%10:
+                            with open('hyperparam_search_henaff.pickle', 'wb') as handle:
+                                pickle.dump(hyperparam_output, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                    else: 
+                        ps = str(cp) + '/' + str(N_p)
+                        acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,distType=distType)
+                        acc=acc/trials
+                        hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':None,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+    
                     cp += 1
+                    if cp%2:
+                        with open('hyperparam_search_henaff.pickle', 'wb') as handle:
+                            pickle.dump(hyperparam_output, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+
+
+
+
+
