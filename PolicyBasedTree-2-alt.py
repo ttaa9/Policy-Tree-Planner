@@ -50,7 +50,7 @@ def gumbel_softmax_hard(logits, temperature):
 ##############################################
 
 
-def greedy_valueF(state):
+def greedy_valueFunc(state):
     state = state.squeeze()
     vx = torch.sum((state[0:15]-state[34:49]).pow(2))
     vy = torch.sum((state[15:30]-state[49:64]).pow(2))
@@ -154,7 +154,8 @@ class SimulationPolicy(nn.Module):
         holderp=-6.0, 
         useOnlyLeaves=False, 
         gamma=0.01,
-        xi=0.01
+        xi=0.01,
+        valueF=None
         ):
         optimizer = optim.Adam(self.parameters(), lr = eta_lr )
         for p in forwardModel.parameters(): p.requires_grad = False
@@ -180,7 +181,7 @@ class SimulationPolicy(nn.Module):
         printEvery = 25
         for i in range(0,trainIters):
             
-            tree = Tree(s0, forwardModel, self, greedy_valueF, self.env, maxDepth) #, treeBreadth)
+            tree = Tree(s0, forwardModel, self, valueF, self.env, maxDepth) #, treeBreadth)
             loss = tree.getLossFromAllNodes(
                 alpha=alpha, lambda_h=lambda_h, useHolder=useHolder, 
                 holderp=holderp, useOnlyLeaves=useOnlyLeaves, gamma=gamma, xi = xi
@@ -201,7 +202,7 @@ class SimulationPolicy(nn.Module):
                 nns = np.array(numNodes)
                 accsnp = np.array(accs)
                 print('----------------')
-                print('Local Loss',i,":",loss.data[0])
+                print(i,"- Local Loss:",loss.data[0,0])
                 print('NumNodes:', np.mean(nns), '('+str(np.std(nns))+')') #,len(nns)) 
                 print('Accs:', np.mean(accs), '('+str(np.std(accs))+')') #,len(accs)) 
                 #print('NumTreeNodes (avg over last %d):' % printEvery, avgNumNodes / float(printEvery))
@@ -354,7 +355,7 @@ class Tree(object):
     def getLossFromAllNodes(self, alpha=0.5, lambda_h=-0.025, useHolder=False, holderp=-5.0, useOnlyLeaves=False, gamma=0.01, xi = 0.01):
         targetNodes = self.allNodes
         if useOnlyLeaves: targetNodes = self.leaves
-        totalInverseValue = avar(torch.FloatTensor([0.0]))
+        totalInverseValue = avar(torch.FloatTensor([0.0])).unsqueeze(0)
         totalEntropy      = avar(torch.FloatTensor([0.0]))
         totalBranching    = avar(torch.FloatTensor([0.0]))
         totalEntropyB      = avar(torch.FloatTensor([0.0])) # For branching sampler
@@ -372,8 +373,15 @@ class Tree(object):
                 # print('Exp',expectedBranching)
                 # print('TrueBB',node.branchingBreadth)
                 # totalBranching += node.branchingBreadth.type(torch.FloatTensor) # IGNORES PARENT TODO
-            node.loss = -self.valueF( node.state )
-            totalInverseValue += node.loss.pow( holderp )
+            currloss = -self.valueF( node.state )
+            node.loss = currloss
+            # print('closs', currloss)
+            # print('Holderp', holderp)
+            currloss_pow = currloss.pow(holderp)
+            # print('clp', currloss_pow)
+            # print('totinv', totalInverseValue)
+
+            totalInverseValue += currloss_pow
             if not node.action is None:
                 totalEntropy += -torch.sum(node.action[0] * torch.log(node.action[0]))
             if not node.softBranching is None:
@@ -417,7 +425,7 @@ def main():
     ForwardModel = LSTMForwardModel(train.lenOfInput,train.lenOfState)
     ForwardModel.load_state_dict( torch.load(f_model_name) )
     # Initialize forward policy
-    exampleEnv = generateTask(0,0,0,8,5) 
+    exampleEnv = generateTask(0,0,0,0,6) 
     SimPolicy = SimulationPolicy(exampleEnv)
 
     print('Loading (greedy) value predictor')
@@ -428,7 +436,7 @@ def main():
 
     # Run training
     if runTraining:
-        maxDepth = 4
+        maxDepth = 3
         SimPolicy.trainSad(
             exampleEnv, 
             ForwardModel, 
@@ -437,13 +445,14 @@ def main():
             # treeBreadth=2, 
             eta_lr=0.0025,  #0.000375,
             trainIters=750,
-            alpha=2.5,
+            alpha=25,
             lambda_h=-0.075, #-0.0125, # negative = encourage entropy in actions
             useHolder=True,
             holderp=-2.0, 
             useOnlyLeaves=False, 
-            gamma=0.0000035, #1.5
-            xi=  -0.000005 #  0.00000000125
+            gamma=0.0000, #0.00000025, #1.5
+            xi= 0, # -0.000005, #  0.00000000125
+            valueF=greedyValueEstimator
         )
          
         # It has no effect anywhere else
