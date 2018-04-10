@@ -49,7 +49,6 @@ def gumbel_softmax_hard(logits, temperature):
 
 ##############################################
 
-
 def greedy_valueFunc(state):
     state = state.squeeze()
     vx = torch.sum((state[0:15]-state[34:49]).pow(2))
@@ -229,6 +228,7 @@ class SimulationPolicy(nn.Module):
         print("NNs",overallNumNodes)
         print("Accs",accuracies)
         print("-----------")
+        return overallNumNodes, accuracies
         
 # POSSIBLE IDEA
 # Dont just consider the leaves; consider all the nodes as possible leaves (consider all subpaths too)
@@ -408,8 +408,8 @@ class Tree(object):
 def main():
 
     ###
-    runTraining = True
-     
+    runTraining = False
+    generateFigs = True
     ###
 
     f_model_name = 'LSTM_FM_1_99' 
@@ -425,37 +425,97 @@ def main():
     ForwardModel = LSTMForwardModel(train.lenOfInput,train.lenOfState)
     ForwardModel.load_state_dict( torch.load(f_model_name) )
     # Initialize forward policy
-    exampleEnv = generateTask(0,0,0,0,6) 
-    SimPolicy = SimulationPolicy(exampleEnv)
+    #exampleEnv = generateTask(0,0,0,0,6) # <----------------------- Task
+    
 
-    print('Loading (greedy) value predictor')
-    gvp_model_name = "greedy_value_predictor"
-    GreedyVP = GreedyValuePredictor(exampleEnv)
-    GreedyVP.load_state_dict(torch.load(gvp_model_name))
-    greedyValueEstimator = lambda state: greedy_value_predictor(state,GreedyVP=GreedyVP)
+    useGreedyRewardPredictor = False
+    if useGreedyRewardPredictor:
+        print('Loading (greedy) value predictor')
+        gvp_model_name = "greedy_value_predictor"
+        GreedyVP = GreedyValuePredictor(exampleEnv)
+        GreedyVP.load_state_dict(torch.load(gvp_model_name))
+        greedyValueEstimator = lambda state: greedy_value_predictor(state,GreedyVP=GreedyVP)
+    else:
+        print('Using L2')
+        greedyValueEstimator = greedy_valueFunc
+
+
+    if generateFigs:
+
+        nRepeats = 10
+        nodeNumsSeqs = []
+        accsSeqs = []
+        namee = '0,6'
+
+        fname = "data-fig-"+namee
+
+        if os.path.exists(fname):
+            print('Loading ' + fname)
+            with open(fname,'rb') as outFile:
+                p = pickle.load(outFile)
+                print(p)
+                nodeNumsSeqs, accsSeqs = p
+                print('N_shape',nodeNumsSeqs.shape)
+                print('A_shape',accsSeqs.shape)
+
+                nodeNumsSeqs = np.array( nodeNumsSeqs )
+                meanNodes = np.mean(nodeNumsSeqs,axis=0)
+                stddevNodes = np.std(nodeNumsSeqs,axis=0)
+                accsSeqs = np.array( accsSeqs )
+                meanAccs = np.mean(accsSeqs,axis=0)
+                stddevAccs = np.std(accsSeqs,axis=0)
+
+        else:
+            print('Generating data')
+            for ir in range(0,nRepeats):
+                print('On iter',ir)
+                maxDepth = 4
+                exampleEnv = generateTask(0,0,0,0,6) # <----------------------- Task
+                SimPolicy = SimulationPolicy(exampleEnv)
+                overallNumNodes, accuracies = SimPolicy.trainSad(
+                    exampleEnv, 
+                    ForwardModel, 
+                    printActions=True, 
+                    maxDepth=maxDepth, 
+                    # treeBreadth=2, 
+                    eta_lr=0.00135,  #0.000375,
+                    trainIters=750,
+                    alpha=12.0,
+                    lambda_h=-0.075, #-0.0125, # negative = encourage entropy in actions
+                    useHolder=True,
+                    holderp=-2.0, 
+                    useOnlyLeaves=False, 
+                    gamma=0.0000005, #0.00000025, #1.5
+                    xi=  -0.00000125, # -0.000005, #  0.00000000125
+                    valueF=greedyValueEstimator
+                )
+                nodeNumsSeqs.append( overallNumNodes )
+                accsSeqs.append( accuracies )
+
+            with open(fname,'wb') as outFile:
+                print('Saving data'); pickle.dump([nodeNumsSeqs,accsSeqs], outFile)        
 
     # Run training
     if runTraining:
-        maxDepth = 3
-        SimPolicy.trainSad(
+        maxDepth = 4
+        overallNumNodes, accuracies = SimPolicy.trainSad(
             exampleEnv, 
             ForwardModel, 
             printActions=True, 
             maxDepth=maxDepth, 
             # treeBreadth=2, 
-            eta_lr=0.0025,  #0.000375,
+            eta_lr=0.00125,  #0.000375,
             trainIters=750,
-            alpha=25,
+            alpha=12.0,
             lambda_h=-0.075, #-0.0125, # negative = encourage entropy in actions
             useHolder=True,
             holderp=-2.0, 
             useOnlyLeaves=False, 
-            gamma=0.0000, #0.00000025, #1.5
-            xi= 0, # -0.000005, #  0.00000000125
+            gamma=0.0000005, #0.00000025, #1.5
+            xi=  -0.00000125, # -0.000005, #  0.00000000125
             valueF=greedyValueEstimator
         )
          
-        # It has no effect anywhere else
         s_0 = torch.unsqueeze(avar(torch.FloatTensor(exampleEnv.getStateRep())), dim=0)
         tree = Tree(s_0, ForwardModel, SimPolicy, greedyValueEstimator, exampleEnv, maxDepth=maxDepth) #, branchingFactor=2)
         tree.measureLossAtTestTime()
