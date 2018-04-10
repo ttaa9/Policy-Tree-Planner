@@ -174,10 +174,7 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
     if tasks== None:
         if difficulty=='Hard':
 
-            tasks = [
-            [5, generateTask(0,0,0,10,10)]
-            [6, generateTask(0,0,0,10,12)],
-            [7, generateTask(0,0,0,14,14)]]
+            tasks = [[5, generateTask(0,0,0,10,10)],[6, generateTask(0,0,0,10,12)],[7, generateTask(0,0,0,14,14)]]
 
 
         if difficulty=='Easy':
