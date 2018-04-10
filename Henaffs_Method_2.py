@@ -174,8 +174,8 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
     if tasks== None:
         if difficulty=='Hard':
 
-            tasks = [[6, generateTask(0,0,0,10,12)],
-                [7, generateTask(0,0,0,14,14)]]
+            tasks = [[5, generateTask(0,0,0,10,10)],[6, generateTask(0,0,0,10,12)],[7, generateTask(0,0,0,14,14)]]
+
 
         if difficulty=='Easy':
 
@@ -256,12 +256,12 @@ def hyperparam_search(lambda_hs=[0.0,-0.005, 0.005] ,
                         if ug:    
                             acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,temp,distType=distType,difficulty=difficulty)
                             acc=acc/trials
-                            hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+                            hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'cp':cp,'difficulty':difficulty})
                         else: 
                             ps = str(cp) + '/' + str(N_p)
                             acc,trials=runTests(lambda_h,eta,noiseLevel,ug,ps,distType=distType,difficulty=difficulty)
                             acc=acc/trials
-                            hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':None,'distType':distType,'acc':acc,'trials':trials,'cp':cp})
+                            hyperparam_output.append({'lambda_h':lambda_h,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'ps':ps,'temp':None,'distType':distType,'acc':acc,'trials':trials,'cp':cp,'difficulty':difficulty})
         
                         cp += 1
                         if cp%10:

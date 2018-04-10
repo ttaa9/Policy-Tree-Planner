@@ -16,8 +16,22 @@ import os, sys, pickle, numpy as np, numpy.random as npr, random as r
 
 from Henaffs_Method_2 import *
 
+import argparse
 
-server_index=1
+parser = argparse.ArgumentParser()
+parser.add_argument('-p',action='store', dest='param', help='index from a hyper parameter,[options: eta, noiseLevel, ug, temp, distType,difficulty]', default= 'temp')
+parser.add_argument('-i', action='store', dest='index',
+                    help='Store a simple value')
+
+
+
+
+results = parser.parse_args()
+
+server_index=int(results.index)
+
+
+
 temperatures = [0.02,0.1, 1, 10]
 temp=[temperatures[server_index]]
 
@@ -35,3 +49,4 @@ hyperparam_search(lambda_hs=[0.0,-0.005, 0.005] ,
                     file_name_output = filename,
                     distType = 1,
                     difficulty='Hard')
+
