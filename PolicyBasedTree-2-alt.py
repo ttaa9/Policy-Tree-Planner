@@ -8,6 +8,7 @@ from TransportTask import TransportTask
 from NavTask import NavigationTask
 from SeqData import SeqData
 from LSTMFM2 import LSTMForwardModel
+from GreedyValuePredictor import GreedyValuePredictor
 
 import os, sys, pickle, numpy as np, numpy.random as npr, random as r
 
@@ -78,6 +79,12 @@ def greedy_CE(state):
     vy  = loss(py.unsqueeze(dim=0), gy)
     return - (vx + vy)
     
+def greedy_value_predictor(state,GreedyVP=None):
+    value = GreedyVP(state)
+    return value
+
+##############################################
+
 def generateTask(px,py,orien,gx,gy):
     direction = NavigationTask.oriens[orien]
     gs = np.array([gx, gy])
@@ -399,16 +406,26 @@ def main():
 
     f_model_name = 'LSTM_FM_1_99' 
     s = 'navigation' # 'transport'
+
     # Read training/validation data
     print('Reading Data')
     trainf, validf = s + "-data-train-small.pickle", s + "-data-test-small.pickle"
     train, valid = SeqData(trainf), SeqData(validf)
+
     # Load forward model
+    print('Loading Forward Model')
     ForwardModel = LSTMForwardModel(train.lenOfInput,train.lenOfState)
     ForwardModel.load_state_dict( torch.load(f_model_name) )
     # Initialize forward policy
-    exampleEnv = generateTask(0,0,0,5,10) 
+    exampleEnv = generateTask(0,0,0,8,5) 
     SimPolicy = SimulationPolicy(exampleEnv)
+
+    print('Loading (greedy) value predictor')
+    gvp_model_name = "greedy_value_predictor"
+    GreedyVP = GreedyValuePredictor(exampleEnv)
+    GreedyVP.load_state_dict(torch.load(gvp_model_name))
+    greedyValueEstimator = lambda state: greedy_value_predictor(state,GreedyVP=GreedyVP)
+
     # Run training
     if runTraining:
         maxDepth = 4
@@ -419,19 +436,19 @@ def main():
             maxDepth=maxDepth, 
             # treeBreadth=2, 
             eta_lr=0.0025,  #0.000375,
-            trainIters=400,
-            alpha=0.5,
-            lambda_h=-0.025, #-0.0125, # negative = encourage entropy in actions
+            trainIters=750,
+            alpha=2.5,
+            lambda_h=-0.075, #-0.0125, # negative = encourage entropy in actions
             useHolder=True,
-            holderp=-1.0, 
+            holderp=-2.0, 
             useOnlyLeaves=False, 
-            gamma=0.00000125, #1.5
-            xi=0.0000000125
+            gamma=0.0000035, #1.5
+            xi=  -0.000005 #  0.00000000125
         )
          
         # It has no effect anywhere else
         s_0 = torch.unsqueeze(avar(torch.FloatTensor(exampleEnv.getStateRep())), dim=0)
-        tree = Tree(s_0, ForwardModel, SimPolicy, greedy_valueF, exampleEnv, maxDepth=maxDepth) #, branchingFactor=2)
+        tree = Tree(s_0, ForwardModel, SimPolicy, greedyValueEstimator, exampleEnv, maxDepth=maxDepth) #, branchingFactor=2)
         tree.measureLossAtTestTime()
         states, actions = tree.getBestPlan()
         print('Final Actions')
