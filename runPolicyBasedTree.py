@@ -240,7 +240,7 @@ def main():
             #print('www',px,py,orien,gx,gy)
             cenv = generateTask(px,py,orien,gx,gy)
             SimPolicy = SimulationPolicy(cenv)
-            SimPolicy.trainSad(ForwardModel, GreedyVP, maxDepth = task[0], niters=3000)
+            SimPolicy.trainSad(ForwardModel, GreedyVP, maxDepth = task[0], niters=2000)
 
             s_0 = torch.unsqueeze(avar(torch.FloatTensor(cenv.getStateRep())), dim =0)
             tree = Tree(s_0,ForwardModel,SimPolicy,greedy_valueF,cenv,task[0],2)
