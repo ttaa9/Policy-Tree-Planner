@@ -37,16 +37,16 @@ temp=[temperatures[server_index]]
 
 filename='hyperparam_search_henaff_temp-'+str(temp)+'.pickle'
 
-hyperparam_search(lambda_hs=[0.0,-0.005, 0.005] ,
-                    etas = [0.01,0.1,0.2,0.3,0.5, 1],
+hyperparam_search(lambda_hs=[0.0,-0.005, 0.005],
+                    etas = [0.01,0.1,0.2,0.3],
                     useGumbels = [True, False], 
                     temperatures = temp,
-                    noiseSigmas = [0,0.01,0.1, 1.0,2.0],
-                    niters = 200,
+                    noiseSigmas = [0.01,0.1, 1.0],
+                    niters = 100,
                     verbose = False,
                     extraVerbose = False, 
-                    numRepeats = 10,
-                    file_name_output = filename,
+                    numRepeats = 5,
+                    file_name_output = 'hyperparam_search_henaff.pickle',
                     distType = 1,
-                    difficulty='Hard')
+                    difficulty='Easy')
 

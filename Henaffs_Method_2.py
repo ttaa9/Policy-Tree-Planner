@@ -165,14 +165,19 @@ env = NavigationTask()
 
 def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', tasks=None, verbose=False,extraVerbose=False):
 
-    numRepeats=10
+    numRepeats=5
     niters=100
 
     # Define tasks
     if tasks== None:
+
+
+
         if difficulty=='Hard':
-            print('\tin Task choice')
-            tasks = [[7, generateTask(0,0,0,14,14)]] #[[5, generateTask(0,0,0,10,10)],[6, generateTask(0,0,0,10,12)],[7, generateTask(0,0,0,14,14)]]
+            #print('\tin Task choice')
+            tasks = [[4, generateTask(0,0,0,4,8)],
+                     [5, generateTask(0,0,0,7,7)],
+                     [6, generateTask(0,0,0,10,12)]] #[[5, generateTask(0,0,0,10,10)],[6, generateTask(0,0,0,10,12)],[7, generateTask(0,0,0,14,14)]]
 
 
         if difficulty=='Easy':
@@ -180,7 +185,7 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
             tasks = [[3, generateTask(0,0,0,4,4)],
                 [4, generateTask(0,0,0,4,8)]]
 
-    print('Difficulty',difficulty)
+    #print('Difficulty',difficulty)
     # Choose dist type
     if distType == 0:   useCE = False; intDist = False
     elif distType == 1: useCE = True;  intDist = False
@@ -188,12 +193,12 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
     # Display status
     wstring = cnum + ',lambda_h=' + str(lh) + ',eta=' + str(eta) + ',sigma=' + str(noiseLevel) + ',dType=' + str(distType) + ',ug=' + str(ug)
     if ug: wstring += ',temp=' + str(temp) 
-    print(wstring)
+    #print(wstring)
     # For each tasks, repeated a few times, attempt to solve the problem
     score, tot = 0, 0
     for i, task in enumerate(tasks):
-        print('Task',i)
-        print('Nactions',task[0],'; Start State',task[1].getStateRep(False))
+        #print('Task',i)
+        #print('Nactions',task[0],'; Start State',task[1].getStateRep(False))
         for _ in range(numRepeats):
             planner = HenaffPlanner(fm,env,maxNumActions=task[0])
             task_state = task[1].getStateRep(oneHotOutput=False)
@@ -202,9 +207,9 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
             orien = np.argmax(task_state[2:6])
             gx = int(task_state[-2])
             gy = int(task_state[-1])
-            print('www',px,py,orien,gx,gy)
+            #print('www',px,py,orien,gx,gy)
             cenv = generateTask(px,py,orien,gx,gy)
-            print(cenv.getStateRep(True)) 
+            #print(cenv.getStateRep(True)) 
             actions = planner.generatePlan(
                     cenv.getStateRep(oneHotOutput=True),
                     eta=eta,
@@ -218,13 +223,13 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
                     temp=temp,
                     lambda_h=lh,
                     useIntDistance=intDist )
-            print('\tAs:',actions)
+            #print('\tAs:',actions)
             # Check for correctness
             for a in actions: cenv.performAction( a )
             r = cenv.getReward()
             correct = (r==1)
             tot += 1
-            print('Correct?',correct)
+            #print('Correct?',correct)
             if correct: score += 1
     wstring += ' -> Score:' + str(score) + '/' + str(tot)
 
@@ -241,10 +246,10 @@ def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0,difficulty='Hard', t
 # Run tasks over all hyper-parameter settings
 
 def hyperparam_search(lambda_hs=[0.0,-0.005, 0.005] ,
-                    etas = [0.01,0.1,0.2,0.3,0.5, 1],
+                    etas = [0.01,0.1,0.2,0.3],
                     useGumbels = [True, False], 
                     temperatures = [0.02,0.1, 1, 10],
-                    noiseSigmas = [0,0.01,0.1, 1.0,2.0],
+                    noiseSigmas = [0.01,0.1, 1.0],
                     niters = 200,
                     verbose = False,
                     extraVerbose = False, 

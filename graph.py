@@ -1,3 +1,5 @@
+
+
 import pickle
 import pdb
 
@@ -37,6 +39,15 @@ for name in filename:
 gumble_score=[]
 no_gumble_score=[]
 
+
+sorted_hyper=sorted(henaff_hyper, key=lambda d: d['acc'], reverse=True)
+
+top_hyper=sorted_hyper[-int(len(sorted_hyper)*0.05):]
+
+henaff_hyper= top_hyper
+
+
+
 for param in henaff_hyper:
 	if param['ug']: 
 		gumble_score.append(param['acc'])
@@ -49,11 +60,13 @@ import matplotlib
 
 fig, ax = plt.subplots()
 
+
 score_gumble_mean=np.mean(np.array(gumble_score))
 score_gumble_std=np.std(np.array(gumble_score))
 
 score_no_gumble_mean=np.mean(np.array(no_gumble_score))
 score_no_gumble_std=np.std(np.array(no_gumble_score))
+
 
 
 
@@ -65,15 +78,21 @@ ax.errorbar(x, y, yerr=error, fmt='o')
 ax.set_title('Accuracy of Henaffs Method using Gumble Softmax')
 #get average for gumble softmax
 
-#plt.show(block=False)
-
-
-sorted_hyper=sorted(henaff_hyper, key=lambda d: d['acc'], reverse=True)
-
-top_hyper=list(filter(lambda d: d['acc']==1,sorted_hyper))
+plt.show(block=False)
 
 
 
+
+
+
+hyperparam_output=[]
+difficulty='Hard'
+for param in top_hyper:
+	lh,eta,noiseLevel,ug,cnum,temp,distType=param['lambda_h'],param['eta'],param['noiseLevel'],param['ug'],param['ps'],param['temp'],param['distType']
+	acc,trials=runTests(lh,eta,noiseLevel,ug,cnum,temp=temp,distType=distType,difficulty=difficulty)
+	hyperparam_output.append({'lambda_h':lh,'eta':eta,'noiseLevel':noiseLevel,'ug':ug,'temp':temp,'distType':distType,'acc':acc,'trials':trials,'difficulty':difficulty})
+#def runTests(lh,eta,noiseLevel,ug,cnum,temp=None,distType=0):
 
 pdb.set_trace()
+
 
