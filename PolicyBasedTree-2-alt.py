@@ -407,11 +407,11 @@ def main():
     ForwardModel = LSTMForwardModel(train.lenOfInput,train.lenOfState)
     ForwardModel.load_state_dict( torch.load(f_model_name) )
     # Initialize forward policy
-    exampleEnv = generateTask(0,0,0,2,3) 
+    exampleEnv = generateTask(0,0,0,5,10) 
     SimPolicy = SimulationPolicy(exampleEnv)
     # Run training
     if runTraining:
-        maxDepth = 3
+        maxDepth = 4
         SimPolicy.trainSad(
             exampleEnv, 
             ForwardModel, 
@@ -425,7 +425,7 @@ def main():
             useHolder=True,
             holderp=-1.0, 
             useOnlyLeaves=False, 
-            gamma=0.000025, #1.5
+            gamma=0.00000125, #1.5
             xi=0.0000000125
         )
          
