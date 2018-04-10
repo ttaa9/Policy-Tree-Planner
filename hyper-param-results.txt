@@ -1,0 +1,1 @@
+1/450,lambda_h=0.0,eta=0.01,sigma=0,dType=1,ug=True,temp=0.02 -> Score:51/70

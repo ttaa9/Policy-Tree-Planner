@@ -18,34 +18,35 @@ from Henaffs_Method_2 import *
 
 import argparse
 
-parser = argparse.ArgumentParser()
-parser.add_argument('-p',action='store', dest='param', help='index from a hyper parameter,[options: eta, noiseLevel, ug, temp, distType,difficulty]', default= 'temp')
-parser.add_argument('-i', action='store', dest='index',
-                    help='Store a simple value')
+#parser = argparse.ArgumentParser()
+#parser.add_argument('-p',action='store', dest='param', help='index from a hyper parameter,[options: eta, noiseLevel, ug, temp, distType,difficulty]', default= 'temp')
+#parser.add_argument('-i', action='store', dest='index',
+#                    help='Store a simple value')
 
 
 
 
-results = parser.parse_args()
+#results = parser.parse_args()
 
-server_index=int(results.index)
+#server_index=int(results.index)
 
 
 
-temperatures = [0.02,0.1, 1, 10]
-temp=[temperatures[server_index]]
+#temperatures = [0.02,0.1, 1, 10]
+#temp=[temperatures[server_index]]
 
+temp = 'wtffffff'
 filename='hyperparam_search_henaff_temp-'+str(temp)+'.pickle'
 
-hyperparam_search(lambda_hs=[0.0,-0.005, 0.005],
-                    etas = [0.01,0.1,0.2,0.3],
-                    useGumbels = [True, False], 
-                    temperatures = temp,
-                    noiseSigmas = [0.01,0.1, 1.0],
-                    niters = 100,
+hyperparam_search(lambda_hs=[0.0] ,
+                    etas = [0.3],
+                    useGumbels = [True], 
+                    temperatures = [0.1],
+                    noiseSigmas = [2.0],
+                    niters = 200,
                     verbose = False,
                     extraVerbose = False, 
-                    numRepeats = 5,
+                    numRepeats = 10,
                     file_name_output = filename,
                     distType = 1,
                     difficulty='Hard')

@@ -1,0 +1,11 @@
+89/180,lambda_h=-0.005,eta=0.2,sigma=2.0,dType=1,ug=True,temp=0.1 -> Score:0/4
+90/180,lambda_h=-0.005,eta=0.2,sigma=2.0,dType=1,ug=False -> Score:0/4
+138/180,lambda_h=0.005,eta=0.1,sigma=1.0,dType=1,ug=False -> Score:0/4
+29/180,lambda_h=0.0,eta=0.2,sigma=2.0,dType=1,ug=True,temp=10 -> Score:0/4
+30/180,lambda_h=0.0,eta=0.2,sigma=2.0,dType=1,ug=False -> Score:0/4
+89/180,lambda_h=-0.005,eta=0.2,sigma=2.0,dType=1,ug=True,temp=0.1 -> Score:0/4
+89/180,lambda_h=-0.005,eta=0.2,sigma=2.0,dType=1,ug=True,temp=0.1 -> Score:0/4
+90/180,lambda_h=-0.005,eta=0.2,sigma=2.0,dType=1,ug=False -> Score:1/4
+138/180,lambda_h=0.005,eta=0.1,sigma=1.0,dType=1,ug=False -> Score:0/4
+29/180,lambda_h=0.0,eta=0.2,sigma=2.0,dType=1,ug=True,temp=10 -> Score:0/4
+30/180,lambda_h=0.0,eta=0.2,sigma=2.0,dType=1,ug=False -> Score:0/4
