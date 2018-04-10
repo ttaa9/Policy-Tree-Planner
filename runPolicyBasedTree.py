@@ -218,9 +218,7 @@ def main():
     gvp_model_name = "greedy_value_predictor_3"
 
     numRepeats = 5
-    tasks = [[5, generateTask(0,0,0,7,7)],
-            [6, generateTask(0,0,0,10,12)],
-            [7, generateTask(0,0,0,14,14)]]
+    tasks = [[6, generateTask(0,0,0,12,10)]]
     
     exampleEnv = NavigationTask()
     ForwardModel = LSTMForwardModel(74,64)
