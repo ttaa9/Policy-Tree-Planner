@@ -48,5 +48,5 @@ hyperparam_search(lambda_hs=[0.0,-0.005, 0.005],
                     numRepeats = 5,
                     file_name_output = 'hyperparam_search_henaff.pickle',
                     distType = 1,
-                    difficulty='Easy')
+                    difficulty='Hard')
 
