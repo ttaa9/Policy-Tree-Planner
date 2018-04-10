@@ -353,12 +353,18 @@ class Tree(object):
         totalEntropyB      = avar(torch.FloatTensor([0.0])) # For branching sampler
         if not useHolder: holderp = 1.0
         nNodes = len(targetNodes)
+        mbf = avar(torch.FloatTensor( np.array(list(range(1,self.simPolicy.maxBranchingFactor+1))) ))
         for i, node in enumerate(targetNodes):
             if i == 0: 
                 node.loss = avar(torch.FloatTensor( [float('inf')] ))
                 continue
             if not node.branchingBreadth is None:
-                totalBranching += node.branchingBreadth.type(torch.FloatTensor) # IGNORES PARENT TODO
+                expectedBranching = torch.sum( node.softBranching * mbf )
+                totalBranching += expectedBranching
+                # print('----')
+                # print('Exp',expectedBranching)
+                # print('TrueBB',node.branchingBreadth)
+                # totalBranching += node.branchingBreadth.type(torch.FloatTensor) # IGNORES PARENT TODO
             node.loss = -self.valueF( node.state )
             totalInverseValue += node.loss.pow( holderp )
             if not node.action is None:
@@ -401,7 +407,7 @@ def main():
     ForwardModel = LSTMForwardModel(train.lenOfInput,train.lenOfState)
     ForwardModel.load_state_dict( torch.load(f_model_name) )
     # Initialize forward policy
-    exampleEnv = generateTask(0,0,0,2,4) 
+    exampleEnv = generateTask(0,0,0,2,3) 
     SimPolicy = SimulationPolicy(exampleEnv)
     # Run training
     if runTraining:
@@ -412,15 +418,15 @@ def main():
             printActions=True, 
             maxDepth=maxDepth, 
             # treeBreadth=2, 
-            eta_lr=0.003,  #0.000375,
-            trainIters=1000,
+            eta_lr=0.0025,  #0.000375,
+            trainIters=400,
             alpha=0.5,
             lambda_h=-0.025, #-0.0125, # negative = encourage entropy in actions
             useHolder=True,
             holderp=-1.0, 
             useOnlyLeaves=False, 
-            gamma=5.5, #1.5
-            xi=0.0001
+            gamma=0.000025, #1.5
+            xi=0.0000000125
         )
          
         # It has no effect anywhere else
