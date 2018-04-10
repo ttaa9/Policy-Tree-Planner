@@ -445,7 +445,7 @@ def main():
         nRepeats = 10
         nodeNumsSeqs = []
         accsSeqs = []
-        namee = '0,6'
+        namee = '3,4-10' #'5,9-10' #'0,6-10' # '3,4-10'
 
         fname = "data-fig-"+namee
 
@@ -453,24 +453,58 @@ def main():
             print('Loading ' + fname)
             with open(fname,'rb') as outFile:
                 p = pickle.load(outFile)
-                print(p)
                 nodeNumsSeqs, accsSeqs = p
-                print('N_shape',nodeNumsSeqs.shape)
-                print('A_shape',accsSeqs.shape)
+                numSeqs = len(nodeNumsSeqs)
+                numPoints = len(nodeNumsSeqs[0])
+                t = np.arange(numPoints)
 
                 nodeNumsSeqs = np.array( nodeNumsSeqs )
                 meanNodes = np.mean(nodeNumsSeqs,axis=0)
-                stddevNodes = np.std(nodeNumsSeqs,axis=0)
+                stderrNodes = np.std(nodeNumsSeqs,axis=0) / np.sqrt(numSeqs)
+
                 accsSeqs = np.array( accsSeqs )
                 meanAccs = np.mean(accsSeqs,axis=0)
-                stddevAccs = np.std(accsSeqs,axis=0)
+                stderrAccs = np.std(accsSeqs,axis=0) / np.sqrt(numSeqs)
+
+                smooth = False
+                if smooth:
+                    from scipy.signal import savgol_filter
+                    # window length of wlen and a degree deg polynomial
+                    wlen, deg = 5, 2
+                    meanNodes = savgol_filter(meanNodes, wlen, deg)
+                    meanAccs = savgol_filter(meanAccs, wlen, deg)
+
+                import matplotlib.pyplot as plt
+                plt.rc('font', size=20)
+                fig, ax = plt.subplots(1)
+                 # https://stackoverflow.com/questions/3899980/how-to-change-the-font-size-on-a-matplotlib-plot
+                ax.plot(t, meanNodes, lw=1.4, label='Total Nodes', color='red')
+                ax.fill_between(t, meanNodes+stderrNodes, meanNodes-stderrNodes, 
+                    facecolor='red', alpha=0.45)
+                ax.set_xlabel('Iteration')
+                ax.set_ylabel('Number of Nodes') #, color='b')
+                #
+                ax2 = ax.twinx()
+                ax2.plot(t, meanAccs, lw=1.4, label='Reward', color='blue')
+                ax2.fill_between(t, meanAccs+stderrAccs, meanAccs-stderrAccs, 
+                    facecolor='blue', alpha=0.45)
+                ax2.set_ylabel('Reward') #, color='r')
+                #
+                ax.set_xlim([-1, 750])
+                ax2.set_ylim([-0.05, 1.05])
+                # ax.legend(loc='lower right') #'upper left')
+                # ax2.legend(loc='upper left')
+                #
+                plt.tight_layout()
+
+                plt.show()
 
         else:
             print('Generating data')
             for ir in range(0,nRepeats):
                 print('On iter',ir)
                 maxDepth = 4
-                exampleEnv = generateTask(0,0,0,0,6) # <----------------------- Task
+                exampleEnv = generateTask(0,0,0,5,9) # <----------------------- Task
                 SimPolicy = SimulationPolicy(exampleEnv)
                 overallNumNodes, accuracies = SimPolicy.trainSad(
                     exampleEnv, 
