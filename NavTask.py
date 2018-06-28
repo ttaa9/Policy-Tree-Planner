@@ -109,7 +109,7 @@ class NavigationTask(SimpleGridTask):
         atReward = self.goal_pos[0]==self.agent_pos[0] and self.goal_pos[1]==self.agent_pos[1]
         return 1 if atReward else 0
 
-    # Note: this is not one-hot, so for fair comparison, we not want to use this for training directly
+    # Note: this is not one-hot, so for fair comparison, we want to use this for training directly
     def getStateRep(self,oneHotOutput=True):
         if oneHotOutput:
            noriens = len(self.oriens)
